@@ -1,0 +1,21 @@
+[project]
+name = "liteagents"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "googlesearch-python>=1.2.5",
+    "markdownify>=0.14.1",
+    "openai>=1.59.6",
+    "openmeteopy",
+    "pyalex>=0.15.1",
+    "pydantic>=2.10.5",
+    "pymupdf4llm>=0.0.17",
+    "pyyaml>=6.0.2",
+    "rich>=13.9.4",
+    "textual>=1.0.0",
+]
+
+[tool.uv.sources]
+openmeteopy = { git = "https://github.com/m0rp43us/openmeteopy" }
