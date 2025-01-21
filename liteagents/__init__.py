@@ -5,6 +5,8 @@ from .agent import Agent
 from .message import Message, SystemMessage, AssistantMessage, UserMessage, ToolMessage, ToolRequest
 from . import auditors
 from . import reasoning
+from . import providers
+from .providers import Provider
 
 __all__ = [
     "Agent",
@@ -19,5 +21,7 @@ __all__ = [
     "UserMessage",
     "ToolMessage",
     "ToolRequest",
-    "reasoning"
+    "reasoning",
+    "providers",
+    "Provider"
 ]

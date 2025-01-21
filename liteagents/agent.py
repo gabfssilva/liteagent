@@ -1,16 +1,20 @@
 import asyncio
 import json
 
-from typing import Callable, List, Iterator, AsyncIterator
+from typing import Callable, List, Iterator, AsyncIterator, Type, Literal, Union
 
 from liteagents import Tool, TOOL_AGENT_PROMPT
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from liteagents.message import Message, UserMessage, AssistantMessage, ToolRequest, ToolMessage, SystemMessage
 from liteagents.providers import Provider
 
+import inspect
+
 AsyncInterceptor = Callable[['Agent', AsyncIterator[Message]], AsyncIterator[Message]]
+
+ResponseMode = Literal["stream", "list", "last"] | Callable[[Message], bool]
 
 
 class Agent:
@@ -22,6 +26,7 @@ class Agent:
     team: List['Agent'] = []
     intercept: AsyncInterceptor = None,
     audit: List[Callable[['Agent', Message], None]] = []
+    respond_as: Type = None
 
     def __init__(
         self,
@@ -33,6 +38,7 @@ class Agent:
         team: List['Agent'] = None,
         intercept: AsyncInterceptor = None,
         audit: List[Callable[['Agent', Message], None]] = None,
+        respond_as: Type = None
     ):
         self.name = name
         self.provider = provider
@@ -42,6 +48,15 @@ class Agent:
         self.team = team or []
         self.audit = audit or []
         self.intercept = intercept or None
+        self.respond_as = respond_as
+
+    def execution_count(
+        self,
+        messages: list[Message],
+        tool: str
+    ) -> int:
+        tool_requests = filter(lambda m: m.role == "assistant" and isinstance(m.content, ToolRequest), messages)
+        return len(list(filter(lambda m: m.content.name == tool, tool_requests)))
 
     def _as_tool(self) -> Tool:
         """Expose the agent as a tool."""
@@ -56,7 +71,7 @@ class Agent:
         ) -> str:
             messages = []
 
-            async for message in self(prompt):
+            async for message in await self(prompt, respond='stream'):
                 if message.role == "assistant" and isinstance(message.content, str):
                     messages.append(message.content)
 
@@ -66,7 +81,9 @@ class Agent:
             name=f'{self.name.replace(" ", "_").lower()}_redirection',
             description=self.description or f"Redirect to the {self.name} agent",
             input_fields=[("prompt", str, Field(..., description="The input prompt for the agent."))],
-            function=agent_function
+            function=agent_function,
+            retries=1,
+            signature=inspect.signature(agent_function)
         )
 
     def _system_prompt(self) -> str:
@@ -120,6 +137,7 @@ class Agent:
         response = self.provider.completion(
             messages=messages,
             tools=self._all_tools,
+            respond_as=self.respond_as
         )
 
         received = []
@@ -134,7 +152,10 @@ class Agent:
                     name=name,
                     arguments=arguments
                 )):
-                    chosen_tool_output = await self._run_tool(ToolRequest(
+                    if self.execution_count(messages, name) > 3:
+                        raise Exception('could not finish the execution')
+
+                    args, chosen_tool_output = await self._run_tool(ToolRequest(
                         id=tool_id,
                         name=name,
                         arguments=arguments
@@ -148,7 +169,12 @@ class Agent:
 
                     yield tool_message
 
-                    answers.append(message)
+                    answers.append(AssistantMessage(content=ToolRequest(
+                        id=tool_id,
+                        name=name,
+                        arguments=args.model_dump() if args else arguments
+                    )))
+
                     answers.append(tool_message)
                 case _:
                     received.append(message)
@@ -163,8 +189,11 @@ class Agent:
         if not chosen_tool:
             raise Exception(f'tool with name {tool_request.name} not found')
 
-        return await chosen_tool(**tool_request.arguments)
-        # return self._convert_content(tool)
+        # try:
+        model = chosen_tool.input_model(**tool_request.arguments)
+        return model, await chosen_tool(**tool_request.arguments)
+        # except ValidationError as e:
+        #     return None, f'{e}'
 
     def _convert_content(self, content) -> str:
         match content:
@@ -179,14 +208,16 @@ class Agent:
             case _:
                 raise Exception(f"tool output must be str, dict, list or BaseModel, got {type(content)}")
 
-    def run(self, prompt: str):
-        async def inner():
-            results = []
-            async for message in self(prompt):
-                results.append(message)
-            return results
+    async def run(self, prompt: str):
+        results = []
 
-        return asyncio.run(inner())
+        async for message in self(prompt):
+            results.append(message)
+
+        return results[:-1]
+
+    def run_sync(self, prompt: str):
+        return asyncio.run(self.run(prompt))
 
     def async_iterable_to_sync_iterable(self, iterator: AsyncIterator) -> Iterator:
         with asyncio.Runner() as runner:
@@ -200,7 +231,7 @@ class Agent:
     def sync(self, prompt: str) -> Iterator[Message]:
         return self.async_iterable_to_sync_iterable(self(prompt))
 
-    async def __call__(self, prompt: str) -> AsyncIterator[Message]:
+    async def _intercepted_call(self, prompt: str) -> AsyncIterator[Message]:
         async def inner() -> AsyncIterator[Message]:
             messages = [
                 SystemMessage(content=self._system_prompt()),
@@ -215,3 +246,31 @@ class Agent:
 
         async for m in self._intercept(inner()):
             yield m
+
+    async def __call__(
+        self,
+        prompt: str,
+        respond: ResponseMode = "last"
+    ) -> Message | List[Message] | AsyncIterator[Message]:
+        match respond:
+            case 'list':
+                all = []
+
+                async for message in self._intercepted_call(prompt):
+                    all.append(message)
+
+                return all
+            case 'last':
+                last: Message | None = None
+
+                async for message in self._intercepted_call(prompt):
+                    last = message
+
+                return last
+            case 'stream':
+                return self._intercepted_call(prompt)
+            case callable:
+                return filter(callable, self._intercepted_call(prompt))
+
+    def __await__(self) -> Message | List[Message] | AsyncIterator[Message]:
+        pass

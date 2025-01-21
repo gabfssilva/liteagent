@@ -5,8 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "docker>=7.1.0",
     "googlesearch-python>=1.2.5",
     "markdownify>=0.14.1",
+    "ollama>=0.4.6",
     "openai>=1.59.6",
     "openmeteopy",
     "pyalex>=0.15.1",

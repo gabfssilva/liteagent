@@ -10,11 +10,8 @@ from liteagents import tool
 @tool
 def get_single_work(
     ref: str = Field(
-        ..., description="Work's ID, DOI or ROR",
-        examples=[
-            "W2741809807",
-            "https://doi.org/10.7717/peerj.4375"
-        ],
+        ...,
+        description="Work's ID, DOI or ROR",
     )
 ) -> dict:
     """ A tool for fetching OpenAlex's works. """
@@ -33,10 +30,6 @@ def get_single_work(
 def get_single_author(
     ref: str = Field(
         ..., description="Author's ID, ORCID or ROR",
-        examples=[
-            "https://ror.org/0128r0c29",
-            "https://orcid.org/0000-0002-1825-0097"
-        ],
 
     )
 ) -> dict:
@@ -53,11 +46,7 @@ def get_single_author(
 @tool
 def get_single_source(
     ref: str = Field(
-        ..., description="Source's ID, DOI or ROR",
-        examples=[
-            "https://ror.org/0128r0c29",
-            "https://doi.org/10.7717/peerj.4375"
-        ]
+        ..., description="Source's ID, DOI or ROR"
     )
 ) -> dict:
     """ A tool for fetching OpenAlex's sources. """
@@ -74,10 +63,6 @@ def get_single_source(
 def get_single_institution(
     ref: str = Field(
         ..., description="Institution's ID, DOI or ROR",
-        examples=[
-            "https://ror.org/0128r0c29",
-            "https://doi.org/10.7717/peerj.4375"
-        ]
     )
 ) -> dict:
     """ A tool for fetching OpenAlex's institutions. """
@@ -94,10 +79,6 @@ def get_single_institution(
 def get_single_topic(
     ref: str = Field(
         ..., description="Topic's ID, DOI or ROR",
-        examples=[
-            "https://ror.org/0128r0c29",
-            "https://doi.org/10.7717/peerj.4375"
-        ]
     )
 ) -> dict:
     """ A tool for fetching OpenAlex's topics. """
@@ -111,12 +92,12 @@ def get_single_topic(
 
 @tool
 def search_works(
-    abstract: Optional[str] = Field(None, description="Search by the paper's abstract"),
-    title: Optional[str] = Field(None, description="Search by the paper's title"),
-    display_name: Optional[str] = Field(None, description="Search by the paper's display name"),
-    fulltext: Optional[str] = Field(None, description="Search by the paper's fulltext"),
-    title_and_abstract: Optional[str] = Field(None, description="Search by the paper's title and abstract"),
-    max_works: int = Field(20, description="The max number of works to be returned in the result")
+    abstract: Optional[str] = Field(..., description="Search by the paper's abstract"),
+    title: Optional[str] = Field(..., description="Search by the paper's title"),
+    display_name: Optional[str] = Field(..., description="Search by the paper's display name"),
+    fulltext: Optional[str] = Field(..., description="Search by the paper's fulltext"),
+    title_and_abstract: Optional[str] = Field(..., description="Search by the paper's title and abstract"),
+    max_works: int = Field(..., description="The max number of works to be returned in the result")
 ) -> list[dict]:
     """ a tool for searching works by OpenAlex's criteria """
 

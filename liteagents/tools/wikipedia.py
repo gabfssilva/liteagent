@@ -1,20 +1,20 @@
 import httpx
+from bs4 import BeautifulSoup
+from markdownify import markdownify as md
 from pydantic import Field
 
-from bs4 import BeautifulSoup  # For parsing HTML
-from markdownify import markdownify as md  # For converting HTML to Markdown
 from liteagents import tool
 
 
 @tool
 async def search(
     query: str = Field(..., description="The search term."),
-    limit: int = Field(5, description="Number of results to fetch (default is 5).")
+    limit: int = Field(..., description="Number of results to fetch.")
 ) -> list[dict]:
-    """Searches Wikipedia for a query and returns summaries of matching articles."""
+    """ Searches Wikipedia for a query and returns summaries of matching articles. """
     url = f"https://en.wikipedia.org/w/rest.php/v1/search/page?q={query}&limit={limit}"
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=False) as client:
         response = await client.get(url)
         response.raise_for_status()
         data = response.json()
@@ -29,12 +29,12 @@ async def search(
 
 @tool
 async def get_complete_article(url: str = Field(..., description="The URL of the page")):
-    """Fetches only the content body of a Wikipedia article as Markdown."""
+    """ Fetches only the content body of a Wikipedia article as Markdown. """
 
     if not url.startswith("https://en.wikipedia.org/wiki/"):
         raise Exception("URL isn't from a Wikipedia page")
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=False) as client:
         response = await client.get(url)
         response.raise_for_status()
         html_content = response.text

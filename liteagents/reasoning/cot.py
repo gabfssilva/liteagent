@@ -1,5 +1,6 @@
 from typing import Callable, AsyncIterator, List
 
+from pydantic import BaseModel
 from typing_extensions import AsyncIterator
 
 from liteagents import Agent, Message, Tool
@@ -70,6 +71,17 @@ Deliver the final summary to the user in markdown, in the following format, with
 """
 
 
+class ChainOfThoughtStep(BaseModel):
+    step: int
+    reasoning: str
+    action: str
+    require_additional_steps: bool
+
+
+class ChainOfThought(BaseModel):
+    steps: List[ChainOfThoughtStep]
+
+
 def chain_of_thought(
     agents: List[Agent],
     provider: Provider = None,
@@ -84,5 +96,6 @@ def chain_of_thought(
         provider=provider or agents[0].provider,
         team=[*agents],
         tools=tools,
-        intercept=agents[0].intercept
+        intercept=agents[0].intercept,
+        respond_as=ChainOfThought
     )

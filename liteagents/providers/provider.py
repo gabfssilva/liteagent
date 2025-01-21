@@ -1,6 +1,6 @@
 from abc import abstractmethod
 
-from typing import AsyncIterator
+from typing import AsyncIterator, Type
 
 from liteagents import Tool
 from liteagents.message import Message
@@ -14,5 +14,6 @@ class Provider:
         self,
         messages: list[Message],
         tools: list[Tool],
+        respond_as: Type,
     ) -> AsyncIterator[Message]:
         raise NotImplementedError

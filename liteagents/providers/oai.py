@@ -1,12 +1,17 @@
+import asyncio
 import json
 import os
-from typing import AsyncIterator
+from typing import AsyncIterator, Type
+
+from openai.lib.streaming.chat import *
+from openai.types.chat import ChatCompletionChunk
+from openai.types.chat.chat_completion_chunk import ChoiceDelta, Choice
 
 from liteagents import Tool
 from liteagents.providers import Provider
 from liteagents.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage
 
-from openai import OpenAI, AsyncOpenAI, BaseModel
+from openai import OpenAI, AsyncOpenAI, BaseModel, NotGiven, NOT_GIVEN
 
 
 class OpenAICompatible(Provider):
@@ -14,7 +19,7 @@ class OpenAICompatible(Provider):
 
     def __init__(
         self,
-        client: AsyncOpenAI = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY")),
+        client: AsyncOpenAI,
         model: str = 'gpt-4o-mini',
         max_tokens: int = 4096,
         temperature: float = 0.7,
@@ -34,23 +39,29 @@ class OpenAICompatible(Provider):
         self,
         messages: list[Message],
         tools: list[Tool],
+        respond_as: Type,
     ) -> AsyncIterator[Message]:
         # Prepare messages for OpenAI API
         def map_message(message: Message) -> dict:
             match message:
-                case UserMessage(role='user', content=content):
+                case UserMessage(content=content):
                     return {
                         "role": "user",
                         "content": content,
                     }
 
-                case AssistantMessage(role=role, content=str(content)):
+                case AssistantMessage(content=str(content)):
                     return {
                         "role": "assistant",
                         "content": content,
                     }
 
-                case AssistantMessage(role=role, content=ToolRequest(id=id, name=name, arguments=arguments)):
+                case AssistantMessage(content=ToolRequest(id=id, name=name, arguments=arguments)):
+                    if isinstance(arguments, BaseModel):
+                        arguments = arguments.model_dump_json()
+                    elif isinstance(arguments, dict):
+                        arguments = json.dumps(arguments)
+
                     return {
                         "role": "assistant",
                         "tool_calls": [{
@@ -58,32 +69,23 @@ class OpenAICompatible(Provider):
                             "type": "function",
                             "function": {
                                 "name": name,
-                                "arguments": json.dumps(arguments),
+                                "arguments": arguments,
                             }
                         }]
                     }
 
-                case ToolMessage(role=role, id=id, content=BaseModel() as content):
-                    return {
-                        "tool_call_id": id,
-                        "role": "tool",
-                        "content": content.model_dump_json(),
-                        "type": "function"
-                    }
+                case ToolMessage(id=id, content=content):
+                    if isinstance(content, BaseModel):
+                        content = content.model_dump_json()
+                    elif isinstance(content, dict):
+                        content = json.dumps(content)
+                    else:
+                        content = f'{content}'
 
-                case ToolMessage(role=role, id=id, content=str(content)):
                     return {
                         "tool_call_id": id,
                         "role": "tool",
                         "content": content,
-                        "type": "function"
-                    }
-
-                case ToolMessage(role=role, id=id, content=content):
-                    return {
-                        "tool_call_id": id,
-                        "role": "tool",
-                        "content": json.dumps(content),
                         "type": "function"
                     }
 
@@ -93,17 +95,13 @@ class OpenAICompatible(Provider):
                         "content": content,
                     }
 
-                # case dict() as raw:
-                #     return raw
-
                 case _:
                     raise ValueError(f"Invalid message type: {type(message)}")
 
-        tool_definitions = list(map(lambda tool: tool.definition, tools)) if len(tools) > 0 else None
+        tool_definitions = list(map(lambda tool: tool.pydantic_tool, tools)) if len(tools) > 0 else None
         parsed_messages = list(map(map_message, messages))
 
-        # Initialize streaming response
-        response = await self.client.chat.completions.create(
+        async with self.client.beta.chat.completions.stream(
             model=self.model,
             messages=parsed_messages,
             tools=tool_definitions,
@@ -112,54 +110,42 @@ class OpenAICompatible(Provider):
             top_p=self.top_p,
             frequency_penalty=self.frequency_penalty,
             presence_penalty=self.presence_penalty,
-            stream=True,  # Stream responses
-        )
+            response_format=respond_as or NOT_GIVEN,
+        ) as stream:
+            async for event in self._as_messages(stream):
+                yield event
 
-        current_tool_request = {
-            "id": None,
-            "name": None,
-            "arguments": None,
-        }
+    @staticmethod
+    async def _as_messages(stream) -> AsyncIterator[Message]:
+        async for event in stream:
+            match event:
+                case ChunkEvent(
+                    chunk=ChatCompletionChunk(
+                        choices=[
+                            Choice(delta=ChoiceDelta(tool_calls=None, content=str(content)))
+                        ]
+                    )
+                ):
+                    yield AssistantMessage(content=content)
 
-        async for chunk in response:
-            for choice in chunk.choices:
-                delta = choice.delta
+                case ContentDoneEvent(parsed=parsed) if parsed is not None:
+                    yield AssistantMessage(content=parsed)
 
-                if delta.content and delta.content != "":
-                    yield AssistantMessage(content=delta.content)
+                case FunctionToolCallArgumentsDoneEvent(
+                    type="tool_calls.function.arguments.done",
+                    name=name,
+                    index=index,
+                    arguments=arguments,
+                    parsed_arguments=parsed_arguments,
+                ):
+                    yield AssistantMessage(
+                        content=ToolRequest(
+                            name=name,
+                            id=f'{index}',
+                            arguments=dict(parsed_arguments) or arguments
+                        )
+                    )
 
-                if not delta.tool_calls:
-                    continue
-
-                for tool_call in delta.tool_calls:
-                    if not current_tool_request["id"]:
-                        current_tool_request["id"] = tool_call.id
-
-                    if not current_tool_request["name"]:
-                        current_tool_request["name"] = tool_call.function.name
-
-                    if not current_tool_request["arguments"]:
-                        current_tool_request["arguments"] = ""
-
-                    if tool_call.function.arguments:
-                        current_tool_request["arguments"] += tool_call.function.arguments
-
-                        try:
-                            arguments = json.loads(current_tool_request["arguments"])
-
-                            yield AssistantMessage(
-                                content=ToolRequest(
-                                    name=current_tool_request["name"],
-                                    id=current_tool_request["id"],
-                                    arguments=arguments,
-                                )
-                            )
-
-                            current_tool_request = {
-                                "id": None,
-                                "name": None,
-                                "arguments": None,
-                            }
-
-                        except json.JSONDecodeError:
-                            continue
+                case _:
+                    # print(f"unexpected: {event}")
+                    pass
