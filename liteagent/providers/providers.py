@@ -3,7 +3,7 @@ from functools import partial
 
 from openai import AsyncOpenAI
 
-from liteagents.providers import OpenAICompatible, Provider, Ollama
+from liteagent.providers import OpenAICompatible, Provider, Ollama
 
 
 def ollama(
@@ -40,7 +40,7 @@ def openai_compatible(
 
 openai: partial[Provider] = partial(
     openai_compatible,
-    model='gpt-4o-mini',
+    model='gpt-4o',
     api_key=os.getenv('OPENAI_API_KEY')
 )
 

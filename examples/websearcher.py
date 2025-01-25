@@ -1,9 +1,8 @@
 import asyncio
 
-from liteagents import Agent
-from liteagents.agent_decorator import agent, team
-from liteagents.providers import deepseek, openai, ollama
-from liteagents.tools import wikipedia, py
+from liteagent import Agent, agent, team
+from liteagent.providers import openai
+from liteagent.tools import wikipedia, py
 
 
 @agent(
@@ -24,7 +23,7 @@ def wikipedia_agent() -> Agent:
 @team(
     name="Searcher",
     team=[wikipedia_agent],
-    tools=[py.runner],
+    tools=[py.python_runner],
     provider=openai()
     # provider=ollama(model='qwen2.5-coder:7b')
 )

@@ -1,13 +1,13 @@
-from liteagents import Agent, tools, auditors, providers
-from liteagents.agent_decorator import agent
-
 import asyncio
+
+from liteagent import Agent, tools, providers, agent
+from liteagent.tools import OpenAlex
 
 
 @agent(
     description="An agent specialized in interacting with OpenAlex APIs",
     provider=providers.openai(),
-    tools=tools.openalex.all + [tools.read_pdf_from_url]
+    tools=[OpenAlex(), tools.read_pdf_from_url]
 )
 def openalex_agent() -> Agent: ...
 

@@ -2,8 +2,8 @@ from abc import abstractmethod
 
 from typing import AsyncIterator, Type
 
-from liteagents import Tool
-from liteagents.message import Message
+from liteagent import Tool
+from liteagent import Message
 
 
 class Provider:

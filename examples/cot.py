@@ -1,22 +1,25 @@
-from liteagents import Agent, tools, auditors, providers, reasoning
-from liteagents.tools import wikipedia, py
+import asyncio
+
+from liteagent import reasoning, Agent, auditors
+from liteagent.providers import openai
 
 agent = reasoning.chain_of_thought(
-    tools=[py.evaluate],
+    provider=openai(),
+    description="**ALWAYS** redirect to the criticizer agent before your final answer",
     agents=[
         Agent(
-            name="Web Searcher",
-            description="An agent specialized in searching the web",
-            provider=providers.openai(),
-            tools=[
-                wikipedia.search,
-                wikipedia.get_complete_article
-            ],
+            name="Criticizer",
+            provider=openai(),
+            description="You are a Criticizer. You receive a chain of thought and find what's wrong with it, answering back the correct answer to the coordinator, if the coordinator is wrong.",
             intercept=auditors.console()
         )
     ]
 )
 
-*_, _ = agent.sync(
-    """What's the fastest animal on earth? How long it would take cross the biggest bridge in the world?"""
-)
+
+async def main():
+    await agent("Alice has four sisters and a brother, Bob. How many sisters does Bob have?")
+
+
+if __name__ == '__main__':
+    asyncio.run(main())

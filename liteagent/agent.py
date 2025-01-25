@@ -1,16 +1,13 @@
 import asyncio
-import json
 
-from typing import Callable, List, Iterator, AsyncIterator, Type, Literal, Union
+import itertools
+from typing import Callable, List, Iterator, AsyncIterator, Type, Literal
 
-from liteagents import Tool, TOOL_AGENT_PROMPT
+from pydantic import Field
 
-from pydantic import BaseModel, Field, ValidationError
-
-from liteagents.message import Message, UserMessage, AssistantMessage, ToolRequest, ToolMessage, SystemMessage
-from liteagents.providers import Provider
-
-import inspect
+from liteagent import Message, UserMessage, AssistantMessage, ToolRequest, ToolMessage, SystemMessage, Provider, \
+    TOOL_AGENT_PROMPT, Tools
+from .tool import Tool, ToolDef
 
 AsyncInterceptor = Callable[['Agent', AsyncIterator[Message]], AsyncIterator[Message]]
 
@@ -34,22 +31,24 @@ class Agent:
         provider: Provider,
         description: str = None,
         system_message: str = None,
-        tools: List[Tool | Callable] = None,
+        tools: List[ToolDef | Callable] = None,
         team: List['Agent'] = None,
         intercept: AsyncInterceptor = None,
         audit: List[Callable[['Agent', Message], None]] = None,
         respond_as: Type = None
     ):
+
         self.name = name
         self.provider = provider
         self.description = description
         self.system_message = system_message
-        self.tools = tools or []
+        self.tools = list(itertools.chain.from_iterable(
+            map(lambda tool: tool.tools() if isinstance(tool, Tools) else [tool], tools))) if tools else []
         self.team = team or []
         self.audit = audit or []
         self.intercept = intercept or None
         self.respond_as = respond_as
-
+        
     def execution_count(
         self,
         messages: list[Message],
@@ -66,9 +65,16 @@ class Agent:
             description="The input prompt for the agent. Consider adding all the context needed for this specific agent."
         )
 
+        tool_name = f'{self.name.replace(" ", "_").lower()}_redirection'
+
+        from .decorators import tool
+
+        @tool
         async def agent_function(
             prompt: str = prompt_field
         ) -> str:
+            f""" Redirect to the {self.name} agent """
+
             messages = []
 
             async for message in await self(prompt, respond='stream'):
@@ -77,14 +83,9 @@ class Agent:
 
             return "".join(messages)
 
-        return Tool(
-            name=f'{self.name.replace(" ", "_").lower()}_redirection',
-            description=self.description or f"Redirect to the {self.name} agent",
-            input_fields=[("prompt", str, Field(..., description="The input prompt for the agent."))],
-            function=agent_function,
-            retries=1,
-            signature=inspect.signature(agent_function)
-        )
+        af = agent_function
+        af.name = tool_name
+        return af
 
     def _system_prompt(self) -> str:
         return (self.system_message or TOOL_AGENT_PROMPT).replace(
@@ -155,7 +156,7 @@ class Agent:
                     if self.execution_count(messages, name) > 3:
                         raise Exception('could not finish the execution')
 
-                    args, chosen_tool_output = await self._run_tool(ToolRequest(
+                    chosen_tool_output = await self._run_tool(ToolRequest(
                         id=tool_id,
                         name=name,
                         arguments=arguments
@@ -172,12 +173,18 @@ class Agent:
                     answers.append(AssistantMessage(content=ToolRequest(
                         id=tool_id,
                         name=name,
-                        arguments=args.model_dump() if args else arguments
+                        arguments=arguments
                     )))
 
                     answers.append(tool_message)
                 case _:
-                    received.append(message)
+                    if self.respond_as:
+                        if isinstance(message.content, self.respond_as):
+                            received.append(AssistantMessage(
+                                content=message.content
+                            ))
+                    else:
+                        received.append(message)
 
         if len(answers) > 0:
             async for answer in self._call(messages + received + answers):
@@ -189,24 +196,7 @@ class Agent:
         if not chosen_tool:
             raise Exception(f'tool with name {tool_request.name} not found')
 
-        # try:
-        model = chosen_tool.input_model(**tool_request.arguments)
-        return model, await chosen_tool(**tool_request.arguments)
-        # except ValidationError as e:
-        #     return None, f'{e}'
-
-    def _convert_content(self, content) -> str:
-        match content:
-            case str():
-                return content
-            case dict():
-                return json.dumps(content)
-            case BaseModel():
-                return content.model_dump_json()
-            case list():
-                return f"[{",".join(list(map(self._convert_content, content)))}]"
-            case _:
-                raise Exception(f"tool output must be str, dict, list or BaseModel, got {type(content)}")
+        return await chosen_tool(**tool_request.arguments)
 
     async def run(self, prompt: str):
         results = []

@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 from markdownify import markdownify as md
 from pydantic import Field
 
-from liteagents import tool
+from liteagent import tool
 
 
 @tool

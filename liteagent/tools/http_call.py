@@ -2,7 +2,7 @@ from typing import Callable
 
 import httpx
 
-from liteagents import Tool, tool
+from liteagent import Tool, tool
 
 
 def http_call(

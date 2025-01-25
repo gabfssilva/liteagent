@@ -1,10 +1,11 @@
-from typing import Callable, AsyncIterator, List
+from typing import Callable, List
 
 from pydantic import BaseModel
-from typing_extensions import AsyncIterator
+from rich.pretty import Pretty
 
-from liteagents import Agent, Message, Tool
-from liteagents.providers import Provider
+from liteagent import Agent, Tool
+from liteagent.auditors import console
+from liteagent.providers import Provider
 
 SYSTEM_PROMPT = """You are a **Chain of Thought (CoT) Coordinator Agent**. Your role is to interpret the user's prompt and generate a **step-by-step chain of thought (CoT) instruction set** for execution by other agents. Each step in the chain must be explicitly defined as a tool call, where you **redirect the step to the appropriate agent or tool** to carry out the task. You act as the orchestrator, ensuring that every agent receives the necessary input and instructions to perform its role effectively. Below is the format and key principles you must adhere to when constructing the CoT:
 
@@ -67,7 +68,6 @@ Deliver the final summary to the user in markdown, in the following format, with
 ## Summary
 [The final summary]
 ```
-
 """
 
 
@@ -80,22 +80,26 @@ class ChainOfThoughtStep(BaseModel):
 
 class ChainOfThought(BaseModel):
     steps: List[ChainOfThoughtStep]
+    final_answer: str
 
 
 def chain_of_thought(
-    agents: List[Agent],
+    description: str = None,
+    agents: List[Agent] = None,
     provider: Provider = None,
     tools: List[Tool | Callable] = None,
+    minimum_steps: int = 5
 ) -> Agent:
-    if len(agents) == 0:
-        raise Exception('You must provide at least one agent')
+    # if len(agents) == 0:
+    #     raise Exception('You must provide at least one agent')
 
     return Agent(
         name=f"CoT Coordinator",
-        system_message=SYSTEM_PROMPT,
+        system_message=SYSTEM_PROMPT.replace("{{minimum_steps}}", f'{minimum_steps}').replace("{{description}}",
+                                                                                              description or ""),
         provider=provider or agents[0].provider,
         team=[*agents],
         tools=tools,
-        intercept=agents[0].intercept,
+        intercept=agents[0].intercept if agents else console(),
         respond_as=ChainOfThought
     )

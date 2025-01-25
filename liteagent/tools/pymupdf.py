@@ -3,7 +3,7 @@ import requests
 from pydantic import Field
 from pymupdf import pymupdf
 
-from liteagents import tool
+from liteagent import tool
 
 
 @tool

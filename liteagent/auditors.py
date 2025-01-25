@@ -1,14 +1,13 @@
-from time import sleep
-from typing import List, AsyncIterator
+from typing import AsyncIterator
 
 from rich.console import Console, Group
 from rich.markdown import Markdown
+from rich.pretty import Pretty
 from rich.rule import Rule
 from typing_extensions import Callable
 
-from liteagents import Agent, Message, AssistantMessage
-from liteagents.agent import AsyncInterceptor
-from liteagents.misc import markdown
+from liteagent import Message, AssistantMessage
+from liteagent.agent import AsyncInterceptor
 
 styles = {
     "user": "bold blue",
@@ -27,7 +26,7 @@ def console(
             lambda m: m.role == "system"
         ]
 
-    async def auditor(agent: Agent, messages: AsyncIterator[Message]) -> AsyncIterator[Message]:
+    async def auditor(agent, messages: AsyncIterator[Message]) -> AsyncIterator[Message]:
         assistant_message = ""
 
         async for current in messages:
@@ -36,9 +35,14 @@ def console(
             if ignore and any(f(current) for f in ignore):
                 continue
 
-            if isinstance(current, AssistantMessage) and isinstance(current.content, str):
-                assistant_message = assistant_message + current.content
-                continue
+            if current.role == 'assistant':
+                if agent.respond_as and not isinstance(current.content, agent.respond_as):
+                    continue
+
+                if isinstance(current, AssistantMessage) and isinstance(current.content, str) and len(
+                    current.content) > 0:
+                    assistant_message = assistant_message + current.content
+                    continue
 
             title, pretty = current.pretty()
             separator = Rule(style="dim", title=title)
@@ -46,17 +50,18 @@ def console(
             if len(assistant_message) > 0:
                 console.print(
                     Group(
-                        separator,
+                        Rule(style="dim", title='Assistant'),
                         Markdown(assistant_message),
                     )
                 )
 
                 assistant_message = ""
 
-            console.print(
-                Group(separator, pretty),
-                style=styles[current.role]
-            )
+            if pretty:
+                console.print(
+                    Group(separator, pretty),
+                    style=styles[current.role]
+                )
 
         if assistant_message != "":
             console.print(

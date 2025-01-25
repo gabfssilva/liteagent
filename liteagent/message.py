@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field, JsonValue
 from rich.console import Pretty
 from rich.markdown import Markdown
 
-import yaml
 from rich.syntax import Syntax
 
 
@@ -88,7 +87,10 @@ class Message(BaseModel):
                 return f"{role.capitalize()}", Syntax(call_as_str, lexer="scala", theme="ansi-light")
 
             case _:
-                return self.role.capitalize, Pretty(self)
+                if self.content and isinstance(self.content, BaseModel):
+                    return self.role.capitalize(), Pretty(self.content.model_dump())
+                else:
+                    return self.role.capitalize(), Pretty(self.model_dump())
 
 
 class UserMessage(Message):

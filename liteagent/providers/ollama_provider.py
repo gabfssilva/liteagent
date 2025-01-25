@@ -7,9 +7,9 @@ from pydantic import BaseModel, TypeAdapter
 
 import json
 
-from liteagents import Tool
-from liteagents.providers import Provider
-from liteagents.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage
+from liteagent import Tool
+from liteagent.providers import Provider
+from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage
 
 from ollama import AsyncClient, ChatResponse
 

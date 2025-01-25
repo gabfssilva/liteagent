@@ -1,7 +1,7 @@
 from pydantic import Field
 from googlesearch import search
 
-from liteagents import tool
+from liteagent import tool
 
 
 @tool

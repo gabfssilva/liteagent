@@ -2,8 +2,8 @@ import os
 
 from pydantic import Field
 
-from liteagents import tool, Agent, auditors
-from liteagents.providers import OpenAICompatible
+from liteagent import tool, Agent, auditors
+from liteagent.providers import OpenAICompatible
 
 
 @tool
