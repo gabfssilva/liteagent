@@ -1,17 +1,13 @@
-import asyncio
-from abc import ABC
-from typing import Type, AsyncIterator
-
-import ollama
-from pydantic import BaseModel, TypeAdapter
-
 import json
-
-from liteagent import Tool
-from liteagent.providers import Provider
-from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage
+from abc import ABC
+from typing import Type, AsyncIterator, Callable
 
 from ollama import AsyncClient, ChatResponse
+from pydantic import BaseModel, TypeAdapter
+
+from liteagent import Tool, ToolResponse
+from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage
+from liteagent.providers import Provider
 
 
 class Ollama(Provider, ABC):
@@ -19,99 +15,86 @@ class Ollama(Provider, ABC):
     model: str
     automatic_download: bool
     downloaded: bool = False
+    chat: Callable[[...], ChatResponse | AsyncIterator[ChatResponse]] = None
 
-    def __init__(self, client: AsyncClient = AsyncClient(), model: str = 'llama3.2', automatic_download: bool = True):
+    def __init__(
+        self,
+        client: AsyncClient = AsyncClient(),
+        model: str = 'llama3.2',
+        automatic_download: bool = True,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
         self.model = model
         self.client = client
         self.automatic_download = automatic_download
+        self.chat = self.client.chat
 
     async def completion(
         self,
         messages: list[Message],
         tools: list[Tool] = None,
-        respond_as: Type = str,
+        respond_as: Type[BaseModel] = None,
     ) -> AsyncIterator[Message]:
         await self._download_if_required()
 
-        def map_message(message: Message) -> dict:
-            match message:
-                case UserMessage(content=content):
-                    return {
-                        "role": "user",
-                        "content": content,
-                    }
-
-                case AssistantMessage(content=str(content)):
-                    return {
-                        "role": "assistant",
-                        "content": content,
-                    }
-
-                case AssistantMessage(content=ToolRequest(id=id, name=name, arguments=arguments)):
-                    if isinstance(arguments, BaseModel):
-                        arguments = arguments.model_dump()
-
-                    return {
-                        "role": "assistant",
-                        "tool_calls": [{
-                            "id": id,
-                            "type": "function",
-                            "function": {
-                                "name": name,
-                                "arguments": arguments,
-                            }
-                        }]
-                    }
-
-                case ToolMessage(id=id, content=content):
-                    if isinstance(content, BaseModel):
-                        content = content.model_dump_json()
-                    elif isinstance(content, dict):
-                        content = json.dumps(content)
-                    else:
-                        content = f'{content}'
-
-                    return {
-                        "tool_call_id": id,
-                        "role": "tool",
-                        "content": content,
-                        "type": "function"
-                    }
-
-                case Message(role=role, content=content):
-                    return {
-                        "role": role,
-                        "content": content,
-                    }
-
-                case _:
-                    raise ValueError(f"Invalid message type: {type(message)}")
-
         tool_definitions = list(map(lambda tool: tool.definition, tools)) if len(tools) > 0 else None
-        parsed_messages = list(map(map_message, messages))
+        parsed_messages = list(map(self.to_ollama_format, messages))
 
-        response: AsyncIterator[ChatResponse] = await self.client.chat(
-            model=self.model,
-            tools=tool_definitions,
-            messages=parsed_messages,
-            format=None if respond_as is None else TypeAdapter(respond_as).json_schema(),
-            stream=True
-        )
+        response_format = None if respond_as is None else TypeAdapter(respond_as).json_schema()
 
-        async for chunk in response:
-            for call in (chunk.message.tool_calls or []):
-                yield AssistantMessage(
-                    content=ToolRequest(
-                        id='0',
-                        name=call.function.name,
-                        arguments=dict(call.function.arguments)
+        async def handle_response() -> Message:
+            response: ChatResponse = await self.chat(
+                model=self.model,
+                tools=tool_definitions,
+                messages=parsed_messages,
+                format=response_format
+            )
+
+            return AssistantMessage(
+                content=respond_as.model_validate_json(response.message.content)
+            )
+
+        async def handle_stream():
+            response: AsyncIterator[ChatResponse] = await self.chat(
+                model=self.model,
+                tools=tool_definitions,
+                messages=parsed_messages,
+                format=response_format,
+                stream=True
+            )
+
+            async for chunk in response:
+                for call in (chunk.message.tool_calls or []):
+                    yield AssistantMessage(
+                        content=ToolRequest(
+                            id='0',
+                            name=call.function.name,
+                            arguments=dict(call.function.arguments)
+                        )
                     )
-                )
 
-            if chunk.message.content and chunk.message.content != '':
-                yield AssistantMessage(
-                    content=chunk.message.content
-                )
+                    continue
+
+                if respond_as and chunk.message.content and chunk.message.content != '':
+                    yield AssistantMessage(
+                        content=respond_as.model_validate_json(chunk.message.content)
+                    )
+
+                    continue
+
+                if chunk.message.content and chunk.message.content != '':
+                    yield AssistantMessage(
+                        content=chunk.message.content
+                    )
+
+                    continue
+
+        if not respond_as:
+            async for response in handle_stream():
+                yield response
+        else:
+            yield await handle_response()
 
     async def _download_if_required(self):
         if self.automatic_download and not self.downloaded:
@@ -128,3 +111,104 @@ class Ollama(Provider, ABC):
                         progress.update(download_task, completed=update.completed, total=update.total)
 
             self.downloaded = True
+
+    @staticmethod
+    def to_ollama_format(message: Message) -> dict:
+        match message:
+            case UserMessage(content=content):
+                return {
+                    "role": "user",
+                    "content": content
+                }
+
+            case AssistantMessage(content=ToolRequest(id=id, name=name, arguments=BaseModel() as arguments)):
+                return {
+                    "role": "assistant",
+                    "tool_calls": [{
+                        "id": id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": arguments,
+                        }
+                    }]
+                }
+
+            case AssistantMessage(content=ToolRequest(id=id, name=name, arguments=dict() as arguments)):
+                return {
+                    "role": "assistant",
+                    "tool_calls": [{
+                        "id": id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": arguments,
+                        }
+                    }]
+                }
+
+            case AssistantMessage(content=ToolRequest(id=id, name=name, arguments=str(arguments))):
+                return {
+                    "role": "assistant",
+                    "tool_calls": [{
+                        "id": id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": arguments,
+                        }
+                    }]
+                }
+
+            case AssistantMessage(content=BaseModel() as content):
+                return {
+                    "role": "assistant",
+                    "content": content.model_dump_json(),
+                }
+
+            case AssistantMessage(content=str() as content):
+                return {
+                    "role": "assistant",
+                    "content": content,
+                }
+
+            case ToolMessage(id=id, content=ToolResponse() as content):
+                return {
+                    "tool_call_id": id,
+                    "role": "tool",
+                    "content": json.dumps(content.__tool_response__()),
+                    "type": "function"
+                }
+
+            case ToolMessage(id=id, content=BaseModel() as content):
+                return {
+                    "tool_call_id": id,
+                    "role": "tool",
+                    "content": content.model_dump_json(),
+                    "type": "function"
+                }
+
+            case ToolMessage(id=id, content=dict() | list() as content):
+                return {
+                    "tool_call_id": id,
+                    "role": "tool",
+                    "content": json.dumps(content),
+                    "type": "function"
+                }
+
+            case ToolMessage(id=id, content=str(content)):
+                return {
+                    "tool_call_id": id,
+                    "role": "tool",
+                    "content": content,
+                    "type": "function"
+                }
+
+            case Message(role=role, content=content):
+                return {
+                    "role": role,
+                    "content": content,
+                }
+
+            case _:
+                raise ValueError(f"Invalid message type: {type(message)}")

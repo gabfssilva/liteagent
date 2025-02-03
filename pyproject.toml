@@ -5,9 +5,15 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "crawl4ai>=0.4.248",
+    "datasets>=3.2.0",
     "docker>=7.1.0",
+    "duckduckgo-search>=7.3.0",
     "googlesearch-python>=1.2.5",
+    "huggingface-hub>=0.28.0",
+    "llama-cpp-python>=0.3.6",
     "markdownify>=0.14.1",
+    "mlx-lm>=0.21.1",
     "ollama>=0.4.6",
     "openai>=1.59.6",
     "openmeteopy",
@@ -17,6 +23,8 @@ dependencies = [
     "pyyaml>=6.0.2",
     "rich>=13.9.4",
     "textual>=1.0.0",
+    "torch>=2.6.0",
+    "transformers>=4.48.2",
 ]
 
 [tool.uv.sources]

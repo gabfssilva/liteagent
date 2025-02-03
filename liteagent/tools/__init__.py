@@ -3,8 +3,9 @@ from . import openalex
 from . import websearch
 from . import wikipedia
 from . import py
-
 from .openalex import OpenAlex
+from .duckduckgo import duckduckgo
+from .crawl4ai import crawl4ai
 
 from .pymupdf import read_pdf_from_url
 
@@ -13,5 +14,7 @@ __all__ = [
     'read_pdf_from_url',
     'websearch',
     'wikipedia',
-    'py'
+    "duckduckgo",
+    "crawl4ai",
+    'py',
 ]

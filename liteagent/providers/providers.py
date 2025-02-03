@@ -1,9 +1,29 @@
 import os
 from functools import partial
 
+from llama_cpp import Llama
 from openai import AsyncOpenAI
 
-from liteagent.providers import OpenAICompatible, Provider, Ollama
+from liteagent.providers import OpenAICompatible, Provider, Ollama, LlamaCpp, Transformer
+
+
+def transformer(
+    model: str = "meta-llama/Llama-3.2-3B",
+    **kwargs
+) -> Provider: return Transformer(model=model, **kwargs)
+
+
+def llamacpp(
+    llm: Llama = None
+) -> Provider:
+    return LlamaCpp(llm=llm or Llama.from_pretrained(
+        repo_id="bartowski/Mistral-Small-24B-Instruct-2501-GGUF",
+        filename="*IQ2_XS.gguf",
+        verbose=False,
+        n_ctx=131072,
+        device="mps",
+        # chat_format='chatml-function-calling'
+    ))
 
 
 def ollama(
@@ -18,23 +38,16 @@ def openai_compatible(
     client: AsyncOpenAI = None,
     base_url: str = None,
     api_key: str = None,
-    max_tokens: int = 16384,
-    temperature: float = 0.7,
-    top_p: float = 1,
-    frequency_penalty: float = 0,
-    presence_penalty: float = 0,
+    **kwargs
 ) -> Provider:
     return OpenAICompatible(
         client=client or AsyncOpenAI(
             api_key=api_key,
-            base_url=base_url
+            base_url=base_url,
+            max_retries=5
         ),
         model=model,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        top_p=top_p,
-        frequency_penalty=frequency_penalty,
-        presence_penalty=presence_penalty
+        **kwargs
     )
 
 

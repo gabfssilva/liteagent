@@ -6,10 +6,10 @@ from liteagent.tools import OpenAlex
 
 @agent(
     description="An agent specialized in interacting with OpenAlex APIs",
-    provider=providers.openai(),
+    provider=providers.openai(model="o3-mini"),
     tools=[OpenAlex(), tools.read_pdf_from_url]
 )
-def openalex_agent() -> Agent: ...
+async def openalex_agent() -> str: ...
 
 
 async def main():

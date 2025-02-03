@@ -1,11 +1,12 @@
 import asyncio
 import inspect
 import typing
+
 from dataclasses import dataclass
 from functools import partial
-from typing import Type, Callable, Awaitable
+from typing import Type, Callable, Awaitable, Protocol, runtime_checkable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
 
 @dataclass
@@ -64,3 +65,9 @@ class Tools:
 
 
 ToolDef = Tool | typing.List[Tool] | Callable[[...], Awaitable[str | dict | BaseModel]]
+
+
+@runtime_checkable
+class ToolResponse(Protocol):
+    def __tool_response__(self) -> JsonValue:
+        pass

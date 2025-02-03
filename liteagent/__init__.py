@@ -1,13 +1,13 @@
 from . import misc
 from .prompts import TOOL_AGENT_PROMPT
-from .tool import Tool, Tools, ToolDef
+from .tool import Tool, Tools, ToolDef, ToolResponse
 from .message import Message, SystemMessage, AssistantMessage, UserMessage, ToolMessage, ToolRequest
-from . import providers
 from .providers import Provider
 from . import auditors
 from .agent import Agent
 from . import reasoning
 from .decorators import agent, tool, team
+from . import providers
 
 __all__ = [
     "Agent",
@@ -28,5 +28,6 @@ __all__ = [
     "ToolRequest",
     "reasoning",
     "providers",
-    "Provider"
+    "Provider",
+    "ToolResponse"
 ]

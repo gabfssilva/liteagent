@@ -1,9 +1,10 @@
 import asyncio
 
 import itertools
+from inspect import Signature
 from typing import Callable, List, Iterator, AsyncIterator, Type, Literal
 
-from pydantic import Field
+from pydantic import Field, BaseModel, create_model
 
 from liteagent import Message, UserMessage, AssistantMessage, ToolRequest, ToolMessage, SystemMessage, Provider, \
     TOOL_AGENT_PROMPT, Tools
@@ -13,17 +14,22 @@ AsyncInterceptor = Callable[['Agent', AsyncIterator[Message]], AsyncIterator[Mes
 
 ResponseMode = Literal["stream", "list", "last"] | Callable[[Message], bool]
 
+AgentResponse = BaseModel | Message | List[Message] | AsyncIterator[Message]
+
 
 class Agent:
     name: str
     provider: Provider
     description: str = None
     system_message: str = None
+    initial_messages: List[Message] = []
     tools: List[Tool | Callable] = []
     team: List['Agent'] = []
     intercept: AsyncInterceptor = None,
     audit: List[Callable[['Agent', Message], None]] = []
     respond_as: Type = None
+    signature: Signature = None
+    user_prompt_template: str = None
 
     def __init__(
         self,
@@ -31,24 +37,39 @@ class Agent:
         provider: Provider,
         description: str = None,
         system_message: str = None,
+        initial_messages: List[Message] = None,
         tools: List[ToolDef | Callable] = None,
         team: List['Agent'] = None,
         intercept: AsyncInterceptor = None,
         audit: List[Callable[['Agent', Message], None]] = None,
-        respond_as: Type = None
+        respond_as: Type = None,
+        signature: Signature = None,
+        user_prompt_template: str = None
     ):
-
         self.name = name
         self.provider = provider
         self.description = description
-        self.system_message = system_message
         self.tools = list(itertools.chain.from_iterable(
             map(lambda tool: tool.tools() if isinstance(tool, Tools) else [tool], tools))) if tools else []
         self.team = team or []
         self.audit = audit or []
         self.intercept = intercept or None
-        self.respond_as = respond_as
-        
+        self.signature = signature
+        self.user_prompt_template = user_prompt_template
+
+        self.respond_as_wrapped = False
+
+        if respond_as and isinstance(respond_as, type) and issubclass(respond_as, BaseModel):
+            self.respond_as = respond_as
+        elif respond_as:
+            self.respond_as_wrapped = True
+            self.respond_as = create_model(f'{type(respond_as).__qualname__}', **{
+                "value": (respond_as, Field(...))
+            })
+
+        self.system_message = system_message
+        self.initial_messages = initial_messages or []
+
     def execution_count(
         self,
         messages: list[Message],
@@ -178,12 +199,7 @@ class Agent:
 
                     answers.append(tool_message)
                 case _:
-                    if self.respond_as:
-                        if isinstance(message.content, self.respond_as):
-                            received.append(AssistantMessage(
-                                content=message.content
-                            ))
-                    else:
+                    if not self.respond_as or (isinstance(message.content, self.respond_as)):
                         received.append(message)
 
         if len(answers) > 0:
@@ -239,28 +255,40 @@ class Agent:
 
     async def __call__(
         self,
-        prompt: str,
-        respond: ResponseMode = "last"
-    ) -> Message | List[Message] | AsyncIterator[Message]:
+        *args,
+        respond: ResponseMode = "last",
+        **kwargs
+    ) -> AgentResponse:
+        if (args or kwargs) and not (len(args) == 1 and isinstance(args[0], str) and not kwargs):
+            if not self.signature or not self.user_prompt_template:
+                raise ValueError("Agent missing signature or prompt template information.")
+            bound = self.signature.bind(*args, **kwargs)
+            bound.apply_defaults()
+            prompt = self.user_prompt_template.format(**bound.arguments)
+        elif args:
+            prompt = args[0]
+        else:
+            raise ValueError("No prompt provided to the agent.")
+
         match respond:
             case 'list':
-                all = []
-
+                messages = []
                 async for message in self._intercepted_call(prompt):
-                    all.append(message)
-
-                return all
+                    messages.append(message)
+                return messages
             case 'last':
-                last: Message | None = None
-
+                last = None
                 async for message in self._intercepted_call(prompt):
                     last = message
-
+                if self.respond_as and self.respond_as_wrapped:
+                    return last.content.value
+                elif self.respond_as:
+                    return last.content
                 return last
             case 'stream':
                 return self._intercepted_call(prompt)
-            case callable:
-                return filter(callable, self._intercepted_call(prompt))
+            case _ if callable(respond):
+                return filter(respond, self._intercepted_call(prompt))
 
     def __await__(self) -> Message | List[Message] | AsyncIterator[Message]:
         pass

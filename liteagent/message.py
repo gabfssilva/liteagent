@@ -4,6 +4,7 @@ from typing import Literal, Union
 from pydantic import BaseModel, Field, JsonValue
 from rich.console import Pretty
 from rich.markdown import Markdown
+from rich.protocol import is_renderable
 
 from rich.syntax import Syntax
 
@@ -39,7 +40,7 @@ class Message(BaseModel):
                 return f"{role.capitalize()} ({name})", Markdown(content)
 
             case ToolMessage(name=name, content=content, role=role):
-                content = content if isinstance(content, BaseModel) else Pretty(content)
+                content = content if is_renderable(content) else Pretty(content)
                 # args = ','.join(args.items()) if isinstance(args, dict) else args
 
                 return f"{role.capitalize()} ({name})", content

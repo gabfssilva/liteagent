@@ -1,12 +1,11 @@
-from functools import wraps
-from typing import List, Callable
-
 import inspect
+from functools import wraps, partial
+from typing import List, Callable, get_type_hints
 
-from pydantic import Field, create_model
+from pydantic import Field, create_model, BaseModel
 from pydantic.fields import FieldInfo
 
-from .agent import Agent, AsyncInterceptor
+from .agent import Agent, AsyncInterceptor, AgentResponse
 from .auditors import console
 from .providers import Provider
 from .tool import Tool
@@ -54,41 +53,47 @@ def agent(
     system_message: str = None,
     tools: List[Tool | Callable] = None,
     team: List[Agent | Callable[[], Agent]] = None,
-    intercept: AsyncInterceptor = console()
-) -> Agent:
+    intercept: AsyncInterceptor | None = console()
+) -> Callable[..., Agent]:
     def decorator(func: Callable) -> Agent:
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            agent_instance = Agent(
-                name=name or func.__name__,
-                provider=provider,
-                description=func.__doc__ or description,
-                system_message=system_message,
-                tools=tools,
-                team=team,
-                intercept=intercept,
-            )
+        signature = inspect.signature(func)
+        user_prompt_template = func.__doc__
+        default_return_types = [str, inspect.Signature.empty]
+        respond_as = None if signature.return_annotation in default_return_types else signature.return_annotation
 
-            return agent_instance
+        agent_instance = Agent(
+            name=name or func.__name__,
+            provider=provider,
+            description=description,
+            system_message=system_message,
+            tools=tools,
+            team=team,
+            intercept=intercept,
+            respond_as=respond_as,
+            signature=signature,
+            user_prompt_template=user_prompt_template
+        )
 
-        return wrapper()
+        return agent_instance
 
     return decorator
 
 
 def team(
     name: str,
-    team: List[Agent | Callable[[], Agent]],
+    agents: List[Agent | Callable[[], Agent]],
     provider: Provider,
     system_message: str = None,
     tools: List[Tool | Callable] = None,
-    intercept: AsyncInterceptor = console()
-) -> Agent:
+    intercept: AsyncInterceptor | None = console(),
+    description: str = None
+) -> Callable[..., Agent]:
     return agent(
         name=name,
         provider=provider,
         system_message=system_message,
         tools=tools,
-        team=team,
-        intercept=intercept
+        team=agents,
+        intercept=intercept,
+        description=description
     )

@@ -11,6 +11,9 @@ class PythonScriptResult(BaseModel):
     def __rich__(self):
         return Pretty(self.result)
 
+    def __tool_response__(self) -> JsonValue:
+        return self.result
+
 
 @tool
 def python_runner(

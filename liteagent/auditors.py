@@ -6,7 +6,7 @@ from rich.pretty import Pretty
 from rich.rule import Rule
 from typing_extensions import Callable
 
-from liteagent import Message, AssistantMessage
+from liteagent import Message, AssistantMessage, ToolRequest
 from liteagent.agent import AsyncInterceptor
 
 styles = {
@@ -35,7 +35,7 @@ def console(
             if ignore and any(f(current) for f in ignore):
                 continue
 
-            if current.role == 'assistant':
+            if current.role == 'assistant' and not isinstance(current.content, ToolRequest):
                 if agent.respond_as and not isinstance(current.content, agent.respond_as):
                     continue
 

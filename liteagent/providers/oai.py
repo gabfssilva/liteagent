@@ -18,24 +18,17 @@ from pydantic import BaseModel
 
 class OpenAICompatible(Provider):
     name: str = "openai"
+    args: dict = {}
 
     def __init__(
         self,
         client: AsyncOpenAI,
         model: str = 'gpt-4o-mini',
-        max_tokens: int = 4096,
-        temperature: float = 0.7,
-        top_p: float = 1,
-        frequency_penalty: float = 0,
-        presence_penalty: float = 0,
+        **kwargs
     ):
         self.client = client
         self.model = model
-        self.max_tokens = max_tokens
-        self.temperature = temperature
-        self.top_p = top_p
-        self.frequency_penalty = frequency_penalty
-        self.presence_penalty = presence_penalty
+        self.args = kwargs
 
     async def completion(
         self,
@@ -50,12 +43,8 @@ class OpenAICompatible(Provider):
             model=self.model,
             messages=parsed_messages,
             tools=tool_definitions,
-            max_tokens=self.max_tokens,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            frequency_penalty=self.frequency_penalty,
-            presence_penalty=self.presence_penalty,
             response_format=respond_as or NOT_GIVEN,
+            **self.args
         ) as stream:
             async for event in self._as_messages(stream):
                 yield event
