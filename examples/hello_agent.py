@@ -26,7 +26,10 @@ def personal_info() -> Person: return Person(
 )
 
 
-@agent(provider=ollama(model='llama3.2'), tools=[personal_info])
+@agent(
+    provider=ollama(model='llama3.2'),
+    tools=[personal_info]
+)
 async def hello_agent() -> str: ...
 
 

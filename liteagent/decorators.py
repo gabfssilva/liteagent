@@ -1,14 +1,13 @@
 import inspect
-from functools import wraps, partial
-from typing import List, Callable, get_type_hints
+from typing import List, Callable
 
-from pydantic import Field, create_model, BaseModel
+from pydantic import Field, create_model
 from pydantic.fields import FieldInfo
 
-from .agent import Agent, AsyncInterceptor, AgentResponse
-from .auditors import console
+from .agent import Agent, AsyncInterceptor
+from .auditors import console, minimal
 from .providers import Provider
-from .tool import Tool
+from .tool import Tool, ToolDef
 
 
 def tool(name: str = None) -> Tool:
@@ -51,13 +50,13 @@ def agent(
     name: str = None,
     description: str = None,
     system_message: str = None,
-    tools: List[Tool | Callable] = None,
+    tools: List[ToolDef] = None,
     team: List[Agent | Callable[[], Agent]] = None,
-    intercept: AsyncInterceptor | None = console()
+    intercept: AsyncInterceptor | None = minimal()
 ) -> Callable[..., Agent]:
     def decorator(func: Callable) -> Agent:
         signature = inspect.signature(func)
-        user_prompt_template = func.__doc__
+        user_prompt_template = inspect.getdoc(func)
         default_return_types = [str, inspect.Signature.empty]
         respond_as = None if signature.return_annotation in default_return_types else signature.return_annotation
 
@@ -85,7 +84,7 @@ def team(
     provider: Provider,
     system_message: str = None,
     tools: List[Tool | Callable] = None,
-    intercept: AsyncInterceptor | None = console(),
+    intercept: AsyncInterceptor | None = minimal(),
     description: str = None
 ) -> Callable[..., Agent]:
     return agent(

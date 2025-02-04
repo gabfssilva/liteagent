@@ -267,6 +267,8 @@ class Agent:
             prompt = self.user_prompt_template.format(**bound.arguments)
         elif args:
             prompt = args[0]
+        elif self.user_prompt_template:
+            prompt = self.user_prompt_template
         else:
             raise ValueError("No prompt provided to the agent.")
 

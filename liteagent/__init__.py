@@ -1,4 +1,3 @@
-from . import misc
 from .prompts import TOOL_AGENT_PROMPT
 from .tool import Tool, Tools, ToolDef, ToolResponse
 from .message import Message, SystemMessage, AssistantMessage, UserMessage, ToolMessage, ToolRequest
@@ -19,7 +18,6 @@ __all__ = [
     "ToolDef",
     "TOOL_AGENT_PROMPT",
     "auditors",
-    "misc",
     "Message",
     "SystemMessage",
     "AssistantMessage",

@@ -1,12 +1,11 @@
+import asyncio
 from typing import Literal, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from liteagent import Agent, agent
-from liteagent.providers import ollama, openai, deepseek
+from liteagent import agent
+from liteagent.providers import openai
 from liteagent.tools import py
-
-import asyncio
 
 
 class Question(BaseModel):
@@ -36,5 +35,4 @@ async def main():
         print(question)
 
 
-if __name__ == '__main__':
-    asyncio.run(main())
+asyncio.run(main())
