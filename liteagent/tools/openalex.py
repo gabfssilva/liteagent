@@ -127,3 +127,6 @@ class OpenAlex(Tools):
             "abstract": work['abstract'],
             "open_access": work['open_access'],
         }, iterator()))
+
+
+openalex = OpenAlex()

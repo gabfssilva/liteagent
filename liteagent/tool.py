@@ -15,6 +15,7 @@ class Tool:
     description: str
     input: Type[BaseModel]
     handler: Callable[[...], Awaitable[str | dict | BaseModel]]
+    eager: bool = False
 
     @property
     def definition(self):

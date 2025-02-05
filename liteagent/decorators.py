@@ -10,7 +10,7 @@ from .providers import Provider
 from .tool import Tool, ToolDef
 
 
-def tool(name: str = None) -> Tool:
+def tool(name: str = None, eager: bool = False) -> Tool:
     def decorator(function) -> Tool:
         sig = inspect.signature(function)
         input_fields = [
@@ -34,7 +34,8 @@ def tool(name: str = None) -> Tool:
             name=function_name,
             description=(function.__doc__ or f"Tool {function_name}").strip(),
             input=create_model(function_name.capitalize(), **field_definitions),
-            handler=function
+            handler=function,
+            eager=eager
         )
 
     if callable(name):

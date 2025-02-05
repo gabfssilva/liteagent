@@ -1,13 +1,13 @@
 import asyncio
 
-from liteagent import Agent, tools, providers, agent
-from liteagent.tools import OpenAlex
+from liteagent import tools, providers, agent
+from liteagent.tools import openalex
 
 
 @agent(
     description="An agent specialized in interacting with OpenAlex APIs",
     provider=providers.openai(model="o3-mini"),
-    tools=[OpenAlex(), tools.read_pdf_from_url]
+    tools=[openalex, tools.read_pdf_from_url]
 )
 async def openalex_agent(subject: str) -> str:
     """
@@ -19,12 +19,27 @@ async def openalex_agent(subject: str) -> str:
     - Summarize it for me
     - Elaborate some key points of your own.
 
-    Your response must be in markdown format.
+    Your response must be in markdown format, following the template:
+
+    ```
+    # [Title]
+
+    ## Summary
+    [The summary you elaborated]
+
+    ## Discoveries
+    [The discoveries of the paper]
+
+    ## Key Points
+    [The extracted key points]
+    ```
+
+    Do not use backquotes in your response.
     """
 
 
 async def main():
-    await openalex_agent(subject='large language models')
+    await openalex_agent(subject='quantum computing')
 
 
 if __name__ == '__main__':

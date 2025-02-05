@@ -2,6 +2,7 @@ import json
 from typing import Literal, Union
 
 from pydantic import BaseModel, Field, JsonValue
+from pydantic.json_schema import SkipJsonSchema
 from rich.console import Pretty
 from rich.markdown import Markdown
 from rich.protocol import is_renderable
@@ -19,6 +20,7 @@ class ToolRequest(BaseModel):
     arguments: dict | list | str = Field(
         ..., description="The arguments of the tool, which can be a dict, list or string."
     )
+    origin: SkipJsonSchema[Literal['local', 'model']] = 'model'
 
 
 Role = Literal["user", "assistant", "system", "tool"]

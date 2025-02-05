@@ -212,7 +212,9 @@ class Agent:
         if not chosen_tool:
             raise Exception(f'tool with name {tool_request.name} not found')
 
-        return await chosen_tool(**tool_request.arguments)
+        args = dict() if len(chosen_tool.input.model_fields) == 0 else tool_request.arguments
+
+        return await chosen_tool(**args)
 
     async def run(self, prompt: str):
         results = []
@@ -239,9 +241,12 @@ class Agent:
 
     async def _intercepted_call(self, prompt: str) -> AsyncIterator[Message]:
         async def inner() -> AsyncIterator[Message]:
+            eagerly_invoked = await self._eagerly_invoked_tools()
+
             messages = [
                 SystemMessage(content=self._system_prompt()),
-                UserMessage(content=prompt)
+                UserMessage(content=prompt),
+                *eagerly_invoked,
             ]
 
             for m in messages:
@@ -294,3 +299,26 @@ class Agent:
 
     def __await__(self) -> Message | List[Message] | AsyncIterator[Message]:
         pass
+
+    async def _eagerly_invoked_tools(self) -> List[Message]:
+        eager = filter(lambda t: t.eager, self._all_tools)
+
+        result = []
+
+        for tool in eager:
+            result.append(AssistantMessage(
+                content=ToolRequest(
+                    id='0',
+                    name=tool.name,
+                    arguments={},
+                    origin='local',
+                ))
+            )
+
+            result.append(ToolMessage(
+                id='0',
+                name=tool.name,
+                content=await tool(),
+            ))
+
+        return result

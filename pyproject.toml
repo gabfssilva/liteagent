@@ -9,6 +9,7 @@ dependencies = [
     "datasets>=3.2.0",
     "docker>=7.1.0",
     "duckduckgo-search>=7.3.0",
+    "fastembed>=0.5.1",
     "googlesearch-python>=1.2.5",
     "huggingface-hub>=0.28.0",
     "llama-cpp-python>=0.3.6",
