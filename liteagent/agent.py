@@ -322,3 +322,7 @@ class Agent:
             ))
 
         return result
+
+    @property
+    def __name__(self) -> str:
+        return self.name

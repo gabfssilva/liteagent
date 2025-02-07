@@ -7,6 +7,7 @@ from .agent import Agent
 from . import reasoning
 from .decorators import agent, tool, team
 from . import providers
+from .auto_function import auto_function
 
 __all__ = [
     "Agent",
@@ -27,5 +28,6 @@ __all__ = [
     "reasoning",
     "providers",
     "Provider",
-    "ToolResponse"
+    "ToolResponse",
+    "auto_function"
 ]

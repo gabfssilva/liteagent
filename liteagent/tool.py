@@ -34,7 +34,13 @@ class Tool:
 
     async def _unsafe_call(self, **kwargs):
         input_data = self.input(**kwargs)
-        dump = input_data.model_dump()
+
+        def shallow_dump(self) -> dict:
+            keys = self.model_dump().keys()
+            get_attr = partial(getattr, self)
+            return {key: get_attr(key) for key in keys}
+
+        dump = shallow_dump(input_data)
 
         if inspect.iscoroutinefunction(self.handler):
             if inspect.ismethod(self.handler):
