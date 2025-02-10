@@ -1,14 +1,13 @@
 import asyncio
 
 from liteagent import agent
-from liteagent.auditors import minimal
-from liteagent.providers import openai
-from liteagent.tools import OpenMeteo
+from liteagent.providers import gemini, openai
+from liteagent.tools import openmeteo
 
 
 @agent(
     description="You're a weather agent. Use your tools to fetch information about the weather.",
-    tools=[OpenMeteo()],
+    tools=[openmeteo],
     provider=openai(model='gpt-4o-mini'),
 )
 async def weather_agent(city: str) -> str:

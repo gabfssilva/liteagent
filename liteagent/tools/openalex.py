@@ -23,6 +23,7 @@ class OpenAlex(Tools):
             "id": work['id'],
             "title": work['title'],
             "abstract": work['abstract'],
+            "authors": list(map(lambda author: author.get('author', None).get('display_name', None), work.get('authorship', []))),
             "open_access": work['open_access'],
         }
 
@@ -126,6 +127,7 @@ class OpenAlex(Tools):
             "title": work['title'],
             "abstract": work['abstract'],
             "open_access": work['open_access'],
+            "authors": list(map(lambda author: author.get('author', None).get('display_name', None), work.get('authorships', []))),
         }, iterator()))
 
 

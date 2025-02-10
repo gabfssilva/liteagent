@@ -8,7 +8,7 @@ from .duckduckgo import duckduckgo
 from .crawl4ai import crawl4ai
 from .memoria import memoria
 from .ipify import ipify
-
+from .openmeteo import openmeteo
 from .pymupdf import read_pdf_from_url
 
 __all__ = [
@@ -20,5 +20,6 @@ __all__ = [
     "crawl4ai",
     'py',
     'memoria',
-    'ipify'
+    'ipify',
+    'openmeteo'
 ]

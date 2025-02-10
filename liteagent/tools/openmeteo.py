@@ -68,3 +68,5 @@ class OpenMeteo(Tools):
 
         response.raise_for_status()
         return response.json()
+
+openmeteo = OpenMeteo()

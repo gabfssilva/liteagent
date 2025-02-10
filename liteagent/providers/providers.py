@@ -1,10 +1,18 @@
 import os
 from functools import partial
 
+from google import genai
 from llama_cpp import Llama
 from openai import AsyncOpenAI
 
 from liteagent.providers import OpenAICompatible, Provider, Ollama, LlamaCpp, Transformer
+from liteagent.providers.gemini_provider import Gemini
+
+
+def gemini(
+    client: genai.Client = genai.Client(),
+    model: str = "gemini-2.0-flash"
+) -> Provider: return Gemini(client, model)
 
 
 def transformer(

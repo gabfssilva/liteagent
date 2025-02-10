@@ -1,121 +1,105 @@
 from typing import AsyncIterator
 
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel
 from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
-from rich.panel import Panel
+from rich.padding import Padding
 from rich.pretty import Pretty
-from rich.rule import Rule
-from rich.text import Text
-from typing_extensions import Callable
+from rich.syntax import Syntax
 
 from liteagent import Message, AssistantMessage, ToolRequest, UserMessage, ToolMessage
-from liteagent.agent import AsyncInterceptor
 
-styles = {
-    "user": "bold blue",
-    "assistant": "bold green",
-    "system": "bold yellow",
-    "tool": "bold magenta",
-}
+console = Console()
+live = Live(console=console, refresh_per_second=10)
+live.start()
+
+import atexit
 
 
-def minimal(console: Console = Console(), truncate: int = 80):
+def exit_handler():
+    live.stop()
+
+
+atexit.register(exit_handler)
+
+
+def minimal(truncate: int = 80):
     async def auditor(agent, messages: AsyncIterator[Message]) -> AsyncIterator[Message]:
         def msg(text: str) -> str:
             return f'({agent.name}) {text}'
 
-        with Live(console=console, refresh_per_second=10) as live:
-            current_assistant_message = msg('🤖 ▷ 👤: ')
+        outputs = []
+        assistant_index = None
+        current_assistant_message = ""
+        last = None
 
-            async for current in messages:
-                yield current
-
-                match current:
-                    case UserMessage(content=str() as content):
-                        console.print(Markdown(msg(f'👤 ▷ 🤖: {content}'), code_theme="ansi-light"))
-
-                    case AssistantMessage(content=ToolRequest() as tool_request):
-                        if tool_request.arguments is None or tool_request.arguments == '{}':
-                            args_as_str = ''
-                        else:
-                            args_as_str = ','.join([f'{k}={v}' for k, v in tool_request.arguments.items()])
-
-                        as_str = f'{tool_request.name}({args_as_str})'
-
-                        prefix = '🤖 ▷ 🔧' if tool_request.origin == 'model' else '↪ 🔧'
-
-                        console.print(msg(f'{prefix}: {as_str}'))
-
-                    case AssistantMessage(content=str() as content):
-                        current_assistant_message += content
-
-                        live.update(Markdown(current_assistant_message, code_theme="ansi-light"))
-                    case ToolMessage(content=content, name=name):
-                        content = str(content)
-
-                        if len(content) > truncate:
-                            content = str(content)[:truncate]
-                            content = content + " [bold]...[/bold]"
-
-                        console.print(msg(f'🔧 ▷ 🤖: {name}() = {content}'))
-
-    return auditor
-
-
-def console(
-    console: Console = Console(),
-    ignore: list[Callable[[Message], bool]] = None,
-) -> AsyncInterceptor:
-    if ignore is None:
-        ignore = [
-            lambda m: m.role == "system"
-        ]
-
-    async def auditor(agent, messages: AsyncIterator[Message]) -> AsyncIterator[Message]:
-        assistant_message = ""
+        def add_output(renderable):
+            outputs.append(renderable)
+            live.update(Group(*outputs))
 
         async for current in messages:
             yield current
 
-            if ignore and any(f(current) for f in ignore):
-                continue
+            match current:
+                case UserMessage(content=str() as content):
+                    add_output(msg("👤 ▷ 🤖:"))
+                    add_output(Padding(Markdown(content, code_theme="ansi-light"), pad=(0, 0, 0, 4)))
 
-            if current.role == 'assistant' and not isinstance(current.content, ToolRequest):
-                if agent.respond_as and not isinstance(current.content, agent.respond_as):
-                    continue
-
-                if isinstance(current, AssistantMessage) and isinstance(current.content, str) and len(
-                    current.content) > 0:
-                    assistant_message = assistant_message + current.content
-                    continue
-
-            title, pretty = current.pretty()
-            separator = Rule(style="dim", title=title)
-
-            if len(assistant_message) > 0:
-                console.print(
-                    Group(
-                        Rule(style="dim", title='Assistant'),
-                        Markdown(assistant_message),
+                case AssistantMessage(content=ToolRequest(name="python_runner") as tool_request):
+                    prefix = "🤖 ▷ 🐍:" if tool_request.origin == "model" else "↪ 🐍:"
+                    add_output(msg(prefix))
+                    add_output(
+                        Padding(
+                            Syntax(tool_request.arguments["script"], "python", theme="ansi-light"),
+                            pad=(0, 0, 0, 4),
+                        )
                     )
-                )
 
-                assistant_message = ""
+                case AssistantMessage(content=ToolRequest() as tool_request):
+                    if tool_request.arguments is None or tool_request.arguments == "{}":
+                        args_as_str = ""
+                    else:
+                        args_as_str = ",".join(
+                            [f"{k}={v}" for k, v in tool_request.arguments.items()]
+                        )
+                    as_str = f"{tool_request.name}({args_as_str})"
+                    prefix = "🤖 ▷ 🔧:" if tool_request.origin == "model" else "↪ 🔧:"
+                    add_output(msg(prefix))
+                    add_output(Padding(as_str, pad=(0, 0, 0, 4)))
 
-            if pretty:
-                console.print(
-                    Group(separator, pretty),
-                    style=styles[current.role]
-                )
+                case AssistantMessage(content=BaseModel() as content) if agent.respond_as:
+                    add_output(msg("🤖 ▷ 👤:"))
+                    add_output(Padding(Pretty(content), pad=(0, 0, 0, 4)))
 
-        if assistant_message != "":
-            console.print(
-                Group(
-                    Rule(style="dim", title='Assistant'),
-                    Markdown(assistant_message),
-                )
-            )
+                case AssistantMessage(content=str() as content) if not agent.respond_as:
+                    if len(content.strip()) == 0:
+                        continue
+
+                    if not last or (last.role != "assistant" or isinstance(last.content, ToolRequest)):
+                        add_output(msg("🤖 ▷ 👤:"))
+                        assistant_index = len(outputs)
+                        outputs.append(Padding(Markdown("", code_theme="ansi-light"), pad=(0, 0, 0, 4)))
+                        live.update(Group(*outputs))
+                        current_assistant_message = ""
+
+                    current_assistant_message += content
+                    outputs[assistant_index] = Padding(
+                        Markdown(current_assistant_message, code_theme="ansi-light"), pad=(0, 0, 0, 4)
+                    )
+                    live.update(Group(*outputs))
+
+                case ToolMessage(content=BaseModel() as content, name="python_runner"):
+                    add_output(msg("🐍 ▷ 🤖:"))
+                    add_output(Padding(content, pad=(0, 0, 0, 4)))
+
+                case ToolMessage(content=content, name=name):
+                    content = str(content)
+                    if len(content) > truncate:
+                        content = content[:truncate] + " [bold]...[/bold]"
+                    add_output(msg("🔧 ▷ 🤖:"))
+                    add_output(Padding(f"{name}() = {content}", pad=(0, 0, 0, 4)))
+
+            last = current
 
     return auditor

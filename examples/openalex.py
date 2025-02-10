@@ -1,17 +1,17 @@
 import asyncio
 
 from liteagent import tools, providers, agent
-from liteagent.tools import openalex
+from liteagent.tools import openalex, read_pdf_from_url
 
 
 @agent(
     description="An agent specialized in interacting with OpenAlex APIs",
     provider=providers.openai(model="o3-mini"),
-    tools=[openalex, tools.read_pdf_from_url]
+    tools=[openalex, read_pdf_from_url]
 )
 async def openalex_agent(subject: str) -> str:
     """
-    I want you to search for 3 pagers on {subject}.
+    I want you to search for 5 papers on {subject}.
     Based on their abstract, choose one of them, the one you find the most amusing.
     After that, I want you to:
 
@@ -22,7 +22,12 @@ async def openalex_agent(subject: str) -> str:
     Your response must be in markdown format, following the template:
 
     ```
+    # Papers
+    [All the papers you found, in a markdown table, containing the title, authors and url]
+
     # [Title]
+
+    [Why you chose this paper]
 
     ## Summary
     [The summary you elaborated]
@@ -39,7 +44,7 @@ async def openalex_agent(subject: str) -> str:
 
 
 async def main():
-    await openalex_agent(subject='quantum computing')
+    await openalex_agent(subject='quantum physics')
 
 
 if __name__ == '__main__':

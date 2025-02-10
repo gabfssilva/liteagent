@@ -17,10 +17,14 @@ class PythonScriptResult(BaseModel):
 
 @tool
 def python_runner(
-    script: str = Field(..., description="The python's script to be evaluated."),
-    output_variable: str = Field(...,
-                                 description="The name of the variable that will contain all the needed result of the execution."),
-
+    script: str = Field(
+        ...,
+        description="The python's script to be evaluated."
+    ),
+    output_variable: str = Field(
+        ...,
+        description="The name of the variable that will contain all the needed result of the execution."
+    ),
 ) -> PythonScriptResult:
     """A tool for evaluating python's code.
 
@@ -44,7 +48,7 @@ def python_runner(
     **Assistant via `python_runner`**:
 
     {
-      "script": "import requests; response = requests.get(\"https://api.ipify.org?format=json\"); final_result = response.json()[\"ip\"]"
+      "script": "import requests\nresponse = requests.get(\"https://api.ipify.org?format=json\")\nfinal_result = response.json()[\"ip\"]"
       "output_variable": "final_result"
     }
     """
@@ -59,10 +63,10 @@ def python_runner(
     except KeyError as e:
         return PythonScriptResult(
             script=script,
-            result=f"It looks like `{output_variable}` was not properly defined in the script. Be sure to assign the last result to this variable"
+            result=f"It looks like `{output_variable}` was not properly defined in the script. Be sure to assign the last result to this variable",
         )
     except BaseException as e:
         return PythonScriptResult(
             script=script,
-            result=f"An error occurred while evaluating the script: {e}"
+            result=f"An error occurred while evaluating the script: {e}",
         )

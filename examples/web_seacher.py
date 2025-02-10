@@ -7,7 +7,7 @@ from liteagent.tools import duckduckgo, crawl4ai
 
 @agent(
     tools=[duckduckgo, crawl4ai],
-    provider=openai(model='o3-mini')
+    provider=openai(model='gpt-4o-mini')
 )
 async def news(year: int, country: str) -> str:
     """

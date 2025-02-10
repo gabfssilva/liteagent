@@ -3,7 +3,7 @@ from .oai import OpenAICompatible
 from .ollama_provider import Ollama
 from .llamacpp import LlamaCpp
 from .transformer import Transformer
-from .providers import openai, openrouter, deepseek, ollama, llamacpp, transformer
+from .providers import openai, openrouter, deepseek, ollama, llamacpp, transformer, gemini
 
 __all__ = [
     "Provider",
@@ -15,5 +15,6 @@ __all__ = [
     "openrouter",
     "deepseek",
     "ollama",
-    "transformer"
+    "transformer",
+    "gemini"
 ]

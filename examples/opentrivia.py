@@ -31,8 +31,8 @@ async def questions(amount: int, difficulty: Literal["easy", "medium", "hard"]) 
 
 
 async def main():
-    for question in (await questions(amount=15, difficulty="easy")).questions:
-        print(question)
+    for question in (await questions(amount=5, difficulty="easy")).questions:
+        pass
 
 
 asyncio.run(main())
