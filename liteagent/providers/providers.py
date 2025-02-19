@@ -61,7 +61,7 @@ def openai_compatible(
 
 openai: partial[Provider] = partial(
     openai_compatible,
-    model='gpt-4o',
+    model='gpt-4o-mini',
     api_key=os.getenv('OPENAI_API_KEY')
 )
 

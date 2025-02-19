@@ -1,12 +1,15 @@
+import base64
 import json
 from abc import ABC
 from typing import Type, AsyncIterator, Callable
 
+import httpx
 from ollama import AsyncClient, ChatResponse
 from pydantic import BaseModel, TypeAdapter
 
 from liteagent import Tool, ToolResponse
-from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage
+from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, ImageBase64, ImageURL, \
+    ImageContent
 from liteagent.providers import Provider
 
 
@@ -39,7 +42,7 @@ class Ollama(Provider, ABC):
         await self._download_if_required()
 
         tool_definitions = list(map(lambda tool: tool.definition, tools)) if len(tools) > 0 else None
-        parsed_messages = list(map(self.to_ollama_format, messages))
+        parsed_messages =  [await self.to_ollama_format(message) for message in messages]
 
         response_format = None if respond_as is None else TypeAdapter(respond_as).json_schema()
 
@@ -113,12 +116,26 @@ class Ollama(Provider, ABC):
             self.downloaded = True
 
     @staticmethod
-    def to_ollama_format(message: Message) -> dict:
+    async def to_ollama_format(message: Message) -> dict:
         match message:
             case UserMessage(content=content):
+                string_content = "\n".join(filter(lambda c: isinstance(c, str), content))
+
+                async def image_content(image: ImageContent):
+                    match image:
+                        case ImageURL(url=url):
+                            async with httpx.AsyncClient() as client:
+                                response = await client.get(url)
+                                return response.content
+                        case ImageBase64(base64=base64_str):
+                            return base64_str
+
+                images = list(filter(lambda c: isinstance(c, ImageBase64) or isinstance(c, ImageURL), content))
+
                 return {
                     "role": "user",
-                    "content": content
+                    "content": string_content,
+                    "images": [await image_content(image) for image in images] if len(images) > 0 else None,
                 }
 
             case AssistantMessage(content=ToolRequest(id=id, name=name, arguments=BaseModel() as arguments)):

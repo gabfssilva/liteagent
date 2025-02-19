@@ -10,7 +10,7 @@ from .providers import Provider
 from .tool import Tool, ToolDef
 
 
-def tool(name: str = None, eager: bool = False) -> Tool:
+def tool(name: str = None, eager: bool = False, emoji: str = '🔧') -> Tool:
     def decorator(function) -> Tool:
         sig = inspect.signature(function)
         input_fields = [
@@ -35,7 +35,8 @@ def tool(name: str = None, eager: bool = False) -> Tool:
             description=(function.__doc__ or f"Tool {function_name}").strip(),
             input=create_model(function_name.capitalize(), **field_definitions),
             handler=function,
-            eager=eager
+            eager=eager,
+            emoji=emoji
         )
 
     if callable(name):
@@ -46,7 +47,7 @@ def tool(name: str = None, eager: bool = False) -> Tool:
     return decorator
 
 
-def agent(
+def agent[Out](
     provider: Provider,
     name: str = None,
     description: str = None,
@@ -54,14 +55,14 @@ def agent(
     tools: List[ToolDef] = None,
     team: List[Agent | Callable[[], Agent]] = None,
     intercept: AsyncInterceptor | None = minimal()
-) -> Callable[..., Agent]:
-    def decorator(func: Callable) -> Agent:
+) -> Callable[..., Agent[Out]]:
+    def decorator(func: Callable) -> Agent[Out]:
         signature = inspect.signature(func)
         user_prompt_template = inspect.getdoc(func)
-        default_return_types = [str, inspect.Signature.empty]
+        default_return_types = [inspect.Signature.empty]
         respond_as = None if signature.return_annotation in default_return_types else signature.return_annotation
 
-        agent_instance = Agent(
+        agent_instance = Agent[Out](
             name=name or func.__name__,
             provider=provider,
             description=description,
@@ -74,7 +75,7 @@ def agent(
             user_prompt_template=user_prompt_template
         )
 
-        return agent_instance
+        return inspect.markcoroutinefunction(agent_instance)
 
     return decorator
 

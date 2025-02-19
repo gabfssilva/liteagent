@@ -9,7 +9,10 @@ from .crawl4ai import crawl4ai
 from .memoria import memoria
 from .ipify import ipify
 from .openmeteo import openmeteo
-from .pymupdf import read_pdf_from_url
+from .pdf import read_pdf_from_url
+from .vision import vision
+from .calc import calculator
+from .clock import clock
 
 __all__ = [
     'openalex',
@@ -21,5 +24,8 @@ __all__ = [
     'py',
     'memoria',
     'ipify',
-    'openmeteo'
+    'openmeteo',
+    'vision',
+    'calculator',
+    'clock'
 ]

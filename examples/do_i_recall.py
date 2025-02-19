@@ -1,12 +1,12 @@
 import asyncio
 
 from liteagent import agent
-from liteagent.providers import openai, ollama, deepseek
+from liteagent.providers import openai
 from liteagent.tools import memoria, ipify
 
 
 @agent(
-    provider=openai(model='gpt-4o'),
+    provider=openai(model='gpt-4o-mini'),
     tools=[memoria(), ipify]
 )
 async def memorizer() -> str: ...

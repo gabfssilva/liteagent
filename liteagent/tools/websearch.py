@@ -4,7 +4,7 @@ from googlesearch import search
 from liteagent import tool
 
 
-@tool
+@tool(emoji='🔎')
 def google(
     query: str = Field(..., description="The query for Google Web Search"),
     results: int = Field(10, description="The maxium result number to be returned. Defaults to 20."),

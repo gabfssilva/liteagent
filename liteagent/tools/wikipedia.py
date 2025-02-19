@@ -6,7 +6,7 @@ from pydantic import Field
 from liteagent import tool
 
 
-@tool
+@tool(emoji='🔎')
 async def search(
     query: str = Field(..., description="The search term."),
     limit: int = Field(..., description="Number of results to fetch.")
@@ -27,7 +27,7 @@ async def search(
         ), pages))
 
 
-@tool
+@tool(emoji='📄')
 async def get_complete_article(url: str = Field(..., description="The URL of the page")):
     """ Fetches only the content body of a Wikipedia article as Markdown. """
 

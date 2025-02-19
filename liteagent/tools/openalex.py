@@ -7,7 +7,7 @@ from liteagent import tool, Tools
 
 
 class OpenAlex(Tools):
-    @tool
+    @tool(emoji='🔬')
     def get_single_work(
         self,
         ref: str = Field(
@@ -27,7 +27,7 @@ class OpenAlex(Tools):
             "open_access": work['open_access'],
         }
 
-    @tool
+    @tool(emoji='🔬')
     def get_single_author(
         self,
         ref: str = Field(
@@ -44,7 +44,7 @@ class OpenAlex(Tools):
             "works": author['works_count'],
         }
 
-    @tool
+    @tool(emoji='🔬')
     def get_single_source(
         self,
         ref: str = Field(
@@ -60,7 +60,7 @@ class OpenAlex(Tools):
             "works": source['works_count'],
         }
 
-    @tool
+    @tool(emoji='🔬')
     def get_single_institution(
         self,
         ref: str = Field(
@@ -76,7 +76,7 @@ class OpenAlex(Tools):
             "works": institution['works_count'],
         }
 
-    @tool
+    @tool(emoji='🔬')
     def get_single_topic(
         self,
         ref: str = Field(
@@ -91,7 +91,7 @@ class OpenAlex(Tools):
             "works": topic['works_count'],
         }
 
-    @tool
+    @tool(emoji='🔬')
     def search_works(
         self,
         abstract: Optional[str] = Field(..., description="Search by the paper's abstract"),

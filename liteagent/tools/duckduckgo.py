@@ -6,7 +6,7 @@ from pydantic import JsonValue
 from liteagent import tool
 
 
-@tool
+@tool(emoji='🔎')
 def duckduckgo(
     keywords: str,
     region: str | None,
@@ -23,5 +23,5 @@ def duckduckgo(
         safesearch,
         timelimit,
         backend,
-        max_results or 10
+        max_results or 20
     )

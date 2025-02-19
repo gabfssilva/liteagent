@@ -9,7 +9,8 @@ from openai.types.chat.chat_completion_chunk import ChoiceDelta, Choice
 
 from liteagent import Tool
 from liteagent.providers import Provider
-from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage
+from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage, ImageURL, \
+    ImageBase64, MessageContent
 
 from openai import OpenAI, AsyncOpenAI, NotGiven, NOT_GIVEN
 
@@ -53,9 +54,22 @@ class OpenAICompatible(Provider):
     def map_message(message: Message) -> dict:
         match message:
             case UserMessage(content=content):
+                def map_content(item: MessageContent) -> list[dict]:
+                    match item:
+                        case ImageURL(url=url):
+                            return [{ "type": "image_url", "image_url": { "url": url } }]
+                        case ImageBase64(base64=base64_str):
+                            return [{ "type": "image_base64", "image_base64": base64_str }]
+                        case str() as text:
+                            return [{"type": "text", "text": text}]
+                        case list() as content_list:
+                            return [mapped for c in content_list for mapped in map_content(c)]
+                        case _:
+                            raise ValueError(f"Invalid message type: {type(item)}")
+
                 return {
                     "role": "user",
-                    "content": content
+                    "content": map_content(content)
                 }
 
             case AssistantMessage(content=ToolRequest(id=id, name=name, arguments=BaseModel() as arguments)):

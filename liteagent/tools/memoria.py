@@ -95,7 +95,7 @@ class Memoria(Tools):
     def __init__(self, storage: Storage):
         self.storage = storage
 
-    @tool
+    @tool(emoji='💭')
     async def store(self, memories: list[str] = Field(...,
                                                       description='The memories the user requested you to keep, in a concise manner. It is possible to save multiple memories at once, so, always do it when you can.')) -> str:
         """
@@ -109,7 +109,7 @@ class Memoria(Tools):
 
         return f'Memories successfully stored with ids: {ids}'
 
-    @tool(eager=True)
+    @tool(eager=True, emoji='🧠')
     async def retrieve(self) -> dict[str, str]:
         """
         retrieves all stored memories. check the available memories before asking for more information.
@@ -117,7 +117,7 @@ class Memoria(Tools):
 
         return await self.storage.retrieve()
 
-    @tool
+    @tool(emoji='💭')
     async def update(self, memory_id: str, new_content: str) -> str:
         """
         updates a memory by ID and returns confirmation.
@@ -126,7 +126,7 @@ class Memoria(Tools):
         success = await self.storage.update(memory_id, new_content)
         return "Memory updated successfully." if success else "Memory not found."
 
-    @tool
+    @tool(emoji='🤯')
     async def delete(self, memory_id: str) -> str:
         """
         deletes a memory by ID and returns confirmation.

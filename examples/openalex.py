@@ -44,8 +44,6 @@ async def openalex_agent(subject: str) -> str:
 
 
 async def main():
-    await openalex_agent(subject='quantum physics')
+    await openalex_agent(subject='synthetic biology')
 
-
-if __name__ == '__main__':
-    asyncio.run(main())
+asyncio.run(main())

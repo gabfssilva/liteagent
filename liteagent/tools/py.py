@@ -15,7 +15,7 @@ class PythonScriptResult(BaseModel):
         return self.result
 
 
-@tool
+@tool(emoji='🐍')
 def python_runner(
     script: str = Field(
         ...,

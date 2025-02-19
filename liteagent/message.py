@@ -1,13 +1,7 @@
-import json
 from typing import Literal, Union
 
 from pydantic import BaseModel, Field, JsonValue
 from pydantic.json_schema import SkipJsonSchema
-from rich.console import Pretty
-from rich.markdown import Markdown
-from rich.protocol import is_renderable
-
-from rich.syntax import Syntax
 
 
 class ToolRequest(BaseModel):
@@ -26,74 +20,28 @@ class ToolRequest(BaseModel):
 Role = Literal["user", "assistant", "system", "tool"]
 
 
+class ImageURL(BaseModel):
+    url: str = Field(..., description="The URL of the image.")
+
+
+class ImageBase64(BaseModel):
+    base64: str = Field(..., description="The base64 of the image.")
+
+
+ImageContent = ImageURL | ImageBase64
+TextContent = str
+
+Content = TextContent | ImageContent | BaseModel
+
+MessageContent = Content | list[Content]
+
+
 class Message(BaseModel):
     """
     Abstract base class for all message types.
     """
     role: Role
-    content: Union[str, BaseModel] = Field(..., description="The content of the message.")
-
-    def pretty(self) -> (str, any):
-        """
-        Customizes the rendering of the message using rich formatting by matching self.
-        """
-        match self:
-            case ToolMessage(name=name, content=str(content), role=role):
-                return f"{role.capitalize()} ({name})", Markdown(content)
-
-            case ToolMessage(name=name, content=content, role=role):
-                content = content if is_renderable(content) else Pretty(content)
-                # args = ','.join(args.items()) if isinstance(args, dict) else args
-
-                return f"{role.capitalize()} ({name})", content
-
-            case AssistantMessage(role=role, content=str(content)):
-                return role.capitalize(), content
-
-            case Message(role=role, content=str(content)):
-                return role.capitalize(), Markdown(content, code_theme="ansi-light")
-
-            case Message(role=role, content=ToolRequest(arguments=dict(arguments)) as tool):
-                script = arguments.get('script')
-
-                if script:
-                    return f"{role.capitalize()} (Python Runner)", Syntax(script, lexer="python",
-                                                                          theme="ansi-light")
-
-                return f"{role.capitalize()}", Pretty(tool)
-
-            case Message(role=role, content=ToolRequest(
-                arguments=arguments
-            ) as tool):
-                script = arguments.get('script')
-
-                if script:
-                    return f"{role.capitalize()} (Python Runner)", Syntax(script, lexer="python",
-                                                                          theme="ansi-light")
-
-                return f"{role.capitalize()}", Pretty(tool)
-
-            case Message(role=role, content=ToolRequest(name=name, arguments=args) as content):
-                if 'input' in args and 'script' in args['input']:
-                    return f"{role.capitalize()} ({name})", Syntax(
-                        args['input']['script'],
-                        lexer="python",
-                        theme="ansi-light",
-                        line_numbers=True
-                    )
-
-                call_as_str = f"{name}({json.dumps(args, indent=2)})"
-                return f"{role.capitalize()}", Syntax(call_as_str, lexer="scala", theme="ansi-light")
-
-            case Message(role=role, content=ToolRequest(name=name) as content):
-                call_as_str = f"{name}({json.dumps(content.arguments, indent=2)})"
-                return f"{role.capitalize()}", Syntax(call_as_str, lexer="scala", theme="ansi-light")
-
-            case _:
-                if self.content and isinstance(self.content, BaseModel):
-                    return self.role.capitalize(), Pretty(self.content.model_dump())
-                else:
-                    return self.role.capitalize(), Pretty(self.model_dump())
+    content: MessageContent = Field(..., description="The content of the message.")
 
 
 class UserMessage(Message):
@@ -101,7 +49,7 @@ class UserMessage(Message):
     Represents a message from the user.
     """
     role: str = Field("user", description="The role of the message.")
-    content: str = Field(..., description="The content of the user's message.")
+    content: MessageContent = Field(..., description="The content of the user's message.")
 
 
 class AssistantMessage(Message):

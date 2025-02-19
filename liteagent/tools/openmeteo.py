@@ -31,7 +31,7 @@ class OpenMeteo(Tools):
         "et0_fao_evapotranspiration"
     ]
 
-    @tool
+    @tool(emoji='📍')
     async def geocoding(
         self,
         location: str,
@@ -51,7 +51,7 @@ class OpenMeteo(Tools):
         response.raise_for_status()
         return response.json()
 
-    @tool
+    @tool(emoji='⛅')
     async def forecast(
         self,
         latitude: float,

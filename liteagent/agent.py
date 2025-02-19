@@ -8,6 +8,7 @@ from pydantic import Field, BaseModel, create_model
 
 from liteagent import Message, UserMessage, AssistantMessage, ToolRequest, ToolMessage, SystemMessage, Provider, \
     TOOL_AGENT_PROMPT, Tools
+from .message import MessageContent, ImageURL, ImageBase64
 from .tool import Tool, ToolDef
 
 AsyncInterceptor = Callable[['Agent', AsyncIterator[Message]], AsyncIterator[Message]]
@@ -16,8 +17,10 @@ ResponseMode = Literal["stream", "list", "last"] | Callable[[Message], bool]
 
 AgentResponse = BaseModel | Message | List[Message] | AsyncIterator[Message]
 
+class Wrapped[T](BaseModel):
+    value: T
 
-class Agent:
+class Agent[Out]:
     name: str
     provider: Provider
     description: str = None
@@ -27,7 +30,7 @@ class Agent:
     team: List['Agent'] = []
     intercept: AsyncInterceptor = None,
     audit: List[Callable[['Agent', Message], None]] = []
-    respond_as: Type = None
+    respond_as: Type[Out | Wrapped[Out]] = None
     signature: Signature = None
     user_prompt_template: str = None
 
@@ -42,7 +45,7 @@ class Agent:
         team: List['Agent'] = None,
         intercept: AsyncInterceptor = None,
         audit: List[Callable[['Agent', Message], None]] = None,
-        respond_as: Type = None,
+        respond_as: Type[Out | Wrapped[Out]] = None,
         signature: Signature = None,
         user_prompt_template: str = None
     ):
@@ -57,18 +60,22 @@ class Agent:
         self.signature = signature
         self.user_prompt_template = user_prompt_template
 
-        self.respond_as_wrapped = False
-
-        if respond_as and isinstance(respond_as, type) and issubclass(respond_as, BaseModel):
+        if respond_as and (isinstance(respond_as, type) and issubclass(respond_as, BaseModel) or respond_as == str):
             self.respond_as = respond_as
+            self.respond_as_wrapped = False
         elif respond_as:
             self.respond_as_wrapped = True
-            self.respond_as = create_model(f'{type(respond_as).__qualname__}', **{
-                "value": (respond_as, Field(...))
-            })
+            self.respond_as = Wrapped[respond_as]
+        else:
+            self.respond_as = AsyncIterator[Message]
+            self.respond_as_wrapped = False
 
         self.system_message = system_message
         self.initial_messages = initial_messages or []
+
+    @property
+    def __signature__(self):
+        return self.signature
 
     def execution_count(
         self,
@@ -90,7 +97,7 @@ class Agent:
 
         from .decorators import tool
 
-        @tool
+        @tool(emoji='🤖')
         async def agent_function(
             prompt: str = prompt_field
         ) -> str:
@@ -159,7 +166,7 @@ class Agent:
         response = self.provider.completion(
             messages=messages,
             tools=self._all_tools,
-            respond_as=self.respond_as
+            respond_as=None if issubclass(self.respond_as, str) else self.respond_as
         )
 
         received = []
@@ -199,7 +206,7 @@ class Agent:
 
                     answers.append(tool_message)
                 case _:
-                    if not self.respond_as or (isinstance(message.content, self.respond_as)):
+                    if not self.respond_as or (type(message.content) == self.respond_as):
                         received.append(message)
 
         if len(answers) > 0:
@@ -216,36 +223,13 @@ class Agent:
 
         return await chosen_tool(**args)
 
-    async def run(self, prompt: str):
-        results = []
-
-        async for message in self(prompt):
-            results.append(message)
-
-        return results[:-1]
-
-    def run_sync(self, prompt: str):
-        return asyncio.run(self.run(prompt))
-
-    def async_iterable_to_sync_iterable(self, iterator: AsyncIterator) -> Iterator:
-        with asyncio.Runner() as runner:
-            try:
-                while True:
-                    result = runner.run(anext(iterator))
-                    yield result
-            except StopAsyncIteration as e:
-                pass
-
-    def sync(self, prompt: str) -> Iterator[Message]:
-        return self.async_iterable_to_sync_iterable(self(prompt))
-
-    async def _intercepted_call(self, prompt: str) -> AsyncIterator[Message]:
+    async def _intercepted_call(self, content: MessageContent) -> AsyncIterator[Message]:
         async def inner() -> AsyncIterator[Message]:
             eagerly_invoked = await self._eagerly_invoked_tools()
 
             messages = [
                 SystemMessage(content=self._system_prompt()),
-                UserMessage(content=prompt),
+                UserMessage(content=content),
                 *eagerly_invoked,
             ]
 
@@ -258,46 +242,55 @@ class Agent:
         async for m in self._intercept(inner()):
             yield m
 
+    async def _messages_to_out(self, stream: AsyncIterator[Message]) -> Out:
+        if self.respond_as == AsyncIterator[Message]:
+            return stream
+        if self.respond_as == List[Message]:
+            return [m async for m in stream]
+        if self.respond_as == str or not self.respond_as:
+            current = ''
+
+            async for message in stream:
+                if message.role == "assistant" and isinstance(message.content, str):
+                    current = current + message.content
+                else:
+                    current = ''
+
+            return current
+
+        response: Out | Wrapped[Out] = None
+
+        async for message in stream:
+            if type(message.content) == self.respond_as:
+                response = message.content
+
+        match response:
+            case Wrapped():
+                return response.value
+            case _:
+                return response
+
     async def __call__(
         self,
-        *args,
-        respond: ResponseMode = "last",
-        **kwargs
-    ) -> AgentResponse:
-        if (args or kwargs) and not (len(args) == 1 and isinstance(args[0], str) and not kwargs):
+        *content: MessageContent,
+        **kwargs,
+    ) -> Out:
+        if kwargs:
             if not self.signature or not self.user_prompt_template:
                 raise ValueError("Agent missing signature or prompt template information.")
-            bound = self.signature.bind(*args, **kwargs)
+            bound = self.signature.bind(**kwargs)
             bound.apply_defaults()
-            prompt = self.user_prompt_template.format(**bound.arguments)
-        elif args:
-            prompt = args[0]
+            user_message_content = self.user_prompt_template.format(**bound.arguments)
+        elif content:
+            user_message_content = content
         elif self.user_prompt_template:
-            prompt = self.user_prompt_template
+            user_message_content = self.user_prompt_template
         else:
             raise ValueError("No prompt provided to the agent.")
 
-        match respond:
-            case 'list':
-                messages = []
-                async for message in self._intercepted_call(prompt):
-                    messages.append(message)
-                return messages
-            case 'last':
-                last = None
-                async for message in self._intercepted_call(prompt):
-                    last = message
-                if self.respond_as and self.respond_as_wrapped:
-                    return last.content.value
-                elif self.respond_as:
-                    return last.content
-                return last
-            case 'stream':
-                return self._intercepted_call(prompt)
-            case _ if callable(respond):
-                return filter(respond, self._intercepted_call(prompt))
+        return await self._messages_to_out(self._intercepted_call(user_message_content))
 
-    def __await__(self) -> Message | List[Message] | AsyncIterator[Message]:
+    def __await__(self) -> Out:
         pass
 
     async def _eagerly_invoked_tools(self) -> List[Message]:

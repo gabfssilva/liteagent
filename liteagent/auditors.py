@@ -8,10 +8,11 @@ from rich.padding import Padding
 from rich.pretty import Pretty
 from rich.syntax import Syntax
 
-from liteagent import Message, AssistantMessage, ToolRequest, UserMessage, ToolMessage
+from liteagent import Message, AssistantMessage, ToolRequest, UserMessage, ToolMessage, ImageURL, ImageBase64
 
 console = Console()
-live = Live(console=console, refresh_per_second=10)
+outputs = []
+live = Live(console=console)
 live.start()
 
 import atexit
@@ -29,7 +30,6 @@ def minimal(truncate: int = 80):
         def msg(text: str) -> str:
             return f'({agent.name}) {text}'
 
-        outputs = []
         assistant_index = None
         current_assistant_message = ""
         last = None
@@ -39,12 +39,23 @@ def minimal(truncate: int = 80):
             live.update(Group(*outputs))
 
         async for current in messages:
-            yield current
-
             match current:
-                case UserMessage(content=str() as content):
+                case UserMessage(content=content):
                     add_output(msg("👤 ▷ 🤖:"))
-                    add_output(Padding(Markdown(content, code_theme="ansi-light"), pad=(0, 0, 0, 4)))
+
+                    def add_user_content_output(content, agg=""):
+                        match content:
+                            case str():
+                                outputs.append(Padding(Markdown(content, code_theme="ansi-light"), pad=(0, 0, 0, 4)))
+                            case ImageURL(url=url):
+                                add_output(Padding(Markdown(f"[🖼]({url})", code_theme="ansi-light"), pad=(0, 0, 0, 4)))
+                            case ImageBase64():
+                                add_output(Padding(Markdown("🖼 (base64 omitted)", code_theme="ansi-light"), pad=(0, 0, 0, 4)))
+                            case list():
+                                for item in content:
+                                    add_user_content_output(item)
+
+                    add_user_content_output(content)
 
                 case AssistantMessage(content=ToolRequest(name="python_runner") as tool_request):
                     prefix = "🤖 ▷ 🐍:" if tool_request.origin == "model" else "↪ 🐍:"
@@ -64,7 +75,10 @@ def minimal(truncate: int = 80):
                             [f"{k}={v}" for k, v in tool_request.arguments.items()]
                         )
                     as_str = f"{tool_request.name}({args_as_str})"
-                    prefix = "🤖 ▷ 🔧:" if tool_request.origin == "model" else "↪ 🔧:"
+
+                    tool_emoji = agent._tools.get(tool_request.name).emoji
+
+                    prefix = f"🤖 ▷ {tool_emoji}:" if tool_request.origin == "model" else f"↪ {tool_emoji}:"
                     add_output(msg(prefix))
                     add_output(Padding(as_str, pad=(0, 0, 0, 4)))
 
@@ -72,10 +86,7 @@ def minimal(truncate: int = 80):
                     add_output(msg("🤖 ▷ 👤:"))
                     add_output(Padding(Pretty(content), pad=(0, 0, 0, 4)))
 
-                case AssistantMessage(content=str() as content) if not agent.respond_as:
-                    if len(content.strip()) == 0:
-                        continue
-
+                case AssistantMessage(content=str() as content) if (not agent.respond_as) or issubclass(agent.respond_as, str):
                     if not last or (last.role != "assistant" or isinstance(last.content, ToolRequest)):
                         add_output(msg("🤖 ▷ 👤:"))
                         assistant_index = len(outputs)
@@ -94,12 +105,16 @@ def minimal(truncate: int = 80):
                     add_output(Padding(content, pad=(0, 0, 0, 4)))
 
                 case ToolMessage(content=content, name=name):
+                    tool_emoji = agent._tools.get(name).emoji
+
                     content = str(content)
                     if len(content) > truncate:
                         content = content[:truncate] + " [bold]...[/bold]"
-                    add_output(msg("🔧 ▷ 🤖:"))
+                    add_output(msg(f"{tool_emoji} ▷ 🤖:"))
                     add_output(Padding(f"{name}() = {content}", pad=(0, 0, 0, 4)))
 
             last = current
+            yield current
+
 
     return auditor
