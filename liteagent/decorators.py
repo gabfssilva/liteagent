@@ -1,40 +1,17 @@
 import inspect
 from typing import List, Callable
 
-from pydantic import Field, create_model
-from pydantic.fields import FieldInfo
-
 from .agent import Agent, AsyncInterceptor
-from .auditors import console, minimal
+from .auditors import minimal
 from .providers import Provider
-from .tool import Tool, ToolDef
+from .tool import Tool, ToolDef, parse_tool
 
 
 def tool(name: str = None, eager: bool = False, emoji: str = '🔧') -> Tool:
     def decorator(function) -> Tool:
-        sig = inspect.signature(function)
-        input_fields = [
-            (n,
-             param.annotation,
-             param.default if param.default != param.empty else Field(...))
-            for n, param in sig.parameters.items() if n != 'self'
-        ]
-
-        field_definitions = {}
-
-        for field_name, field_type, field_default in input_fields:
-            if isinstance(field_default, FieldInfo):
-                field_definitions[field_name] = (field_type, field_default)
-            else:
-                field_definitions[field_name] = (field_type, Field(default=field_default))
-
-        function_name = name or function.__name__
-
-        return Tool(
-            name=function_name,
-            description=(function.__doc__ or f"Tool {function_name}").strip(),
-            input=create_model(function_name.capitalize(), **field_definitions),
-            handler=function,
+        return parse_tool(
+            name=name,
+            function=function,
             eager=eager,
             emoji=emoji
         )
@@ -85,7 +62,7 @@ def team(
     agents: List[Agent | Callable[[], Agent]],
     provider: Provider,
     system_message: str = None,
-    tools: List[Tool | Callable] = None,
+    tools: List[ToolDef] = None,
     intercept: AsyncInterceptor | None = minimal(),
     description: str = None
 ) -> Callable[..., Agent]:

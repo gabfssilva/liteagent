@@ -1,6 +1,4 @@
-import asyncio
 import json
-import os
 from typing import AsyncIterator, Type
 
 from openai.lib.streaming.chat import *
@@ -12,7 +10,7 @@ from liteagent.providers import Provider
 from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage, ImageURL, \
     ImageBase64, MessageContent
 
-from openai import OpenAI, AsyncOpenAI, NotGiven, NOT_GIVEN
+from openai import AsyncOpenAI, NOT_GIVEN
 
 from pydantic import BaseModel
 

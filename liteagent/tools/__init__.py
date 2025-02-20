@@ -13,6 +13,7 @@ from .pdf import read_pdf_from_url
 from .vision import vision
 from .calc import calculator
 from .clock import clock
+from .py import python_runner
 
 __all__ = [
     'openalex',
@@ -27,5 +28,6 @@ __all__ = [
     'openmeteo',
     'vision',
     'calculator',
-    'clock'
+    'clock',
+    'python_runner'
 ]

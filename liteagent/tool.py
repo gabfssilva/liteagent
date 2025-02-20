@@ -4,9 +4,11 @@ import typing
 
 from dataclasses import dataclass
 from functools import partial
+from inspect import Signature
 from typing import Type, Callable, Awaitable, Protocol, runtime_checkable
 
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel, JsonValue, create_model
+from pydantic.fields import FieldInfo, Field
 
 
 @dataclass
@@ -102,3 +104,44 @@ ToolDef = Tool | typing.List[Tool] | Callable[[...], Awaitable[str | dict | Base
 class ToolResponse(Protocol):
     def __tool_response__(self) -> JsonValue:
         pass
+
+def parse_tool(
+    function: Callable,
+    name: str = None,
+    signature: Signature | None = None,
+    description: str | None = None,
+    eager: bool = False,
+    emoji: str = '🔧'
+):
+    if name is None:
+        name = function.__name__
+
+    if signature is None:
+        signature = inspect.signature(function)
+
+    if description is None:
+        description = inspect.getdoc(function)
+
+    input_fields = [
+        (n,
+         param.annotation,
+         param.default if param.default != param.empty else Field(...))
+        for n, param in signature.parameters.items() if n != 'self'
+    ]
+
+    field_definitions = {}
+
+    for field_name, field_type, field_default in input_fields:
+        if isinstance(field_default, FieldInfo):
+            field_definitions[field_name] = (field_type, field_default)
+        else:
+            field_definitions[field_name] = (field_type, Field(default=field_default))
+
+    return Tool(
+        name=name,
+        description=description.strip(),
+        input=create_model(name.capitalize(), **field_definitions),
+        handler=function,
+        eager=eager,
+        emoji=emoji
+    )

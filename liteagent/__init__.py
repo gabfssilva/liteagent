@@ -29,5 +29,5 @@ __all__ = [
     "ToolResponse",
     "auto_function",
     "ImageURL",
-    "ImageBase64"
+    "ImageBase64",
 ]

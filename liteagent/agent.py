@@ -1,15 +1,17 @@
 import asyncio
 
 import itertools
+import typing
 from inspect import Signature
-from typing import Callable, List, Iterator, AsyncIterator, Type, Literal
+from typing import Callable, List, Iterator, AsyncIterator, Type, Literal, TypeVar
 
 from pydantic import Field, BaseModel, create_model
+from pydantic.fields import FieldInfo
 
 from liteagent import Message, UserMessage, AssistantMessage, ToolRequest, ToolMessage, SystemMessage, Provider, \
     TOOL_AGENT_PROMPT, Tools
 from .message import MessageContent, ImageURL, ImageBase64
-from .tool import Tool, ToolDef
+from .tool import Tool, ToolDef, parse_tool
 
 AsyncInterceptor = Callable[['Agent', AsyncIterator[Message]], AsyncIterator[Message]]
 
@@ -66,6 +68,7 @@ class Agent[Out]:
         elif respond_as:
             self.respond_as_wrapped = True
             self.respond_as = Wrapped[respond_as]
+            self.respond_as.__name__ = "Out"
         else:
             self.respond_as = AsyncIterator[Message]
             self.respond_as_wrapped = False
@@ -86,34 +89,15 @@ class Agent[Out]:
         return len(list(filter(lambda m: m.content.name == tool, tool_requests)))
 
     def _as_tool(self) -> Tool:
-        """Expose the agent as a tool."""
-
-        prompt_field = Field(
-            default=...,
-            description="The input prompt for the agent. Consider adding all the context needed for this specific agent."
+        """ convert the agent to a tool. """
+        return parse_tool(
+            name=f'{self.name.replace(" ", "_").lower()}_redirection',
+            description=f""" Redirect to the {self.name} agent """,
+            function=self,
+            signature=self.signature,
+            eager=False,
+            emoji='🤖'
         )
-
-        tool_name = f'{self.name.replace(" ", "_").lower()}_redirection'
-
-        from .decorators import tool
-
-        @tool(emoji='🤖')
-        async def agent_function(
-            prompt: str = prompt_field
-        ) -> str:
-            f""" Redirect to the {self.name} agent """
-
-            messages = []
-
-            async for message in await self(prompt, respond='stream'):
-                if message.role == "assistant" and isinstance(message.content, str):
-                    messages.append(message.content)
-
-            return "".join(messages)
-
-        af = agent_function
-        af.name = tool_name
-        return af
 
     def _system_prompt(self) -> str:
         return (self.system_message or TOOL_AGENT_PROMPT).replace(
