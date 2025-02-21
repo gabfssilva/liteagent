@@ -14,6 +14,7 @@ from .vision import vision
 from .calc import calculator
 from .clock import clock
 from .py import python_runner
+from .vector import vector
 
 __all__ = [
     'openalex',
@@ -29,5 +30,6 @@ __all__ = [
     'vision',
     'calculator',
     'clock',
-    'python_runner'
+    'python_runner',
+    'vector'
 ]
