@@ -129,7 +129,15 @@ class OpenAICompatible(Provider):
                     "type": "function"
                 }
 
-            case ToolMessage(id=id, content=dict() | list() as content):
+            case ToolMessage(id=id, content=dict() as content):
+                return {
+                    "tool_call_id": id,
+                    "role": "tool",
+                    "content": json.dumps(content),
+                    "type": "function"
+                }
+
+            case ToolMessage(id=id, content=list() as content):
                 return {
                     "tool_call_id": id,
                     "role": "tool",

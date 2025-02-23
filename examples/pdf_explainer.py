@@ -1,6 +1,6 @@
 
 import asyncio
-from liteagent import agent, providers
+from liteagent import agent
 from liteagent.providers import openai
 from liteagent.tools.pdf import read_pdf_from_url
 

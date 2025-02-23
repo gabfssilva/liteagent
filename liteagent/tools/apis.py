@@ -1,22 +1,12 @@
-from pydantic import Field
-
-from liteagent import Tools, tool
+from liteagent import tool
 from liteagent.tools import http
+
+@tool
+@http(url='https://api.chucknorris.io/jokes/random')
+async def chuck_norris() -> str:
+    """ use this tool to fetch a random joke from chuck norris. send the joke as is in the response. """
 
 @tool
 @http(url='https://api64.ipify.org?format=json')
 async def ipify() -> str:
     """ use this tool to fetch the current ip address via ipify """
-
-class CurrencyApi(Tools):
-    @tool
-    @http(url='https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies.json')
-    async def get_currencies(self) -> list[str]:
-        """ use this tool to fetch a list of currencies """
-
-    @tool
-    @http(url='https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/{base_currency}.json')
-    async def get_currency(self, base_currency: str = Field(..., description="in lowercase")) -> str:
-        """ use this tool to fetch the current exchange rate of the currencies with the base currency """
-
-currency_api = CurrencyApi()

@@ -1,14 +1,13 @@
 import os
 
-from chromadb.api.models import AsyncCollection
-
 os.environ['TOKENIZERS_PARALLELISM'] = 'False'
 
 from typing import AsyncIterator, List, Union
 
 import chromadb
+from chromadb.api.models import AsyncCollection
 
-from liteagent.vector.vector_store import VectorDatabase, Document, Chunk
+from liteagent.vector import VectorDatabase, Document, Chunk
 
 class Chroma(VectorDatabase):
     collection: AsyncCollection
@@ -43,7 +42,7 @@ class Chroma(VectorDatabase):
             await self._upsert_batch(batch)
 
     async def search(self, query: str, k: int) -> AsyncIterator[Chunk]:
-        result = await self.collection.query(query_texts=query, n_results=count)
+        result = await self.collection.query(query_texts=query, n_results=k)
 
         for chunk in zip(result['documents'], result['metadatas'], result['distances']):
             yield Chunk(

@@ -17,4 +17,5 @@ async def news(country: str) -> str:
     Use a critical tone.
     """
 
+
 asyncio.run(news(country='USA'))

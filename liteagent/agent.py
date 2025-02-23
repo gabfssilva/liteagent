@@ -19,8 +19,10 @@ ResponseMode = Literal["stream", "list", "last"] | Callable[[Message], bool]
 
 AgentResponse = BaseModel | Message | List[Message] | AsyncIterator[Message]
 
+
 class Wrapped[T](BaseModel):
     value: T
+
 
 class Agent[Out]:
     name: str
@@ -179,7 +181,7 @@ class Agent[Out]:
                         content=chosen_tool_output,
                         name=name,
                     )
-
+                    
                     yield tool_message
 
                     answers.append(AssistantMessage(content=ToolRequest(

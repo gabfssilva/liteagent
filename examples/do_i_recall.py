@@ -13,11 +13,7 @@ async def memorizer() -> str: ...
 
 
 async def main():
-    await memorizer(
-        "my name is Gabriel. can I count on you to remember it later? Also, can you also check my IP address and also remember it for me later?")
-    print()
-    print('-' * 100)
+    await memorizer("Check my IP address. Also, my name is Gabriel. You have to remember both for me.")
     await memorizer("what was my name again? what about my IP?")
-
 
 asyncio.run(main())

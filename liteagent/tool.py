@@ -1,6 +1,9 @@
+import re
+
 import asyncio
 import inspect
 import typing
+from abc import abstractmethod
 
 from dataclasses import dataclass
 from functools import partial
@@ -9,7 +12,6 @@ from typing import Type, Callable, Awaitable, Protocol, runtime_checkable
 
 from pydantic import BaseModel, JsonValue, create_model
 from pydantic.fields import FieldInfo, Field
-
 
 @dataclass
 class Tool:
@@ -90,15 +92,18 @@ class Tools:
     def tools(self):
         for _, tool in inspect.getmembers(self.__class__, predicate=lambda m: self.predicate(m)):
             tool.handler = partial(tool.handler, self)
+            tool.name = f"{self.base_name()}__{tool.name}"
             yield tool
 
     @staticmethod
     def predicate(member):
         return isinstance(member, Tool)
 
+    @abstractmethod
+    def base_name(self) -> str:
+        return re.sub(r'(?<!^)(?=[A-Z])', '_', self.__class__.__name__).lower()
 
-ToolDef = Tool | typing.List[Tool] | Callable[[...], Awaitable[str | dict | BaseModel]]
-
+ToolDef = Tool | typing.List[Tool] | Tools | Callable[[...], Awaitable[str | dict | BaseModel]] | Awaitable['ToolDef']
 
 @runtime_checkable
 class ToolResponse(Protocol):

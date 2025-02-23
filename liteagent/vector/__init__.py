@@ -1,4 +1,16 @@
-from .chroma_store import Chroma
-from .vector_store import VectorStore, Document, Chunk, Chunks
+from .models import Document, Chunk, Chunks
+from .vector_db import VectorDatabase
+from .chroma_db import Chroma
+from .in_memory_db import InMemory
 
-__all__ = ["Chroma", "VectorStore", "Document", "Chunk", "Chunks"]
+from . import loaders
+
+__all__ = [
+    "InMemory",
+    "Chroma",
+    "VectorDatabase",
+    "Document",
+    "Chunk",
+    "Chunks",
+    "loaders"
+]

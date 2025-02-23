@@ -1,21 +1,29 @@
+from typing import Callable, Awaitable, List
+
+from pydantic import Field
+
 from liteagent import Tools, tool, ToolDef
-from liteagent.vector.vector_store import VectorStore, Chunk, Document, Chunks
+from liteagent.vector import VectorDatabase, Document, Chunks
 
 
-class VectorSearch(Tools):
-    store: VectorStore
+class VectorStore(Tools):
+    store: VectorDatabase
 
-    def __init__(self, store: VectorStore):
+    def __init__(self, store: VectorDatabase):
         super().__init__()
         self.store = store
 
     @tool(emoji='🔎')
-    async def search(self, query: str, count: int) -> Chunks:
+    async def search(
+        self,
+        query: str = Field(..., description="Based on the user intent, the query for the search."),
+        k: int | None = Field(description="The number of close neighbors to return. Minimum 5, maximum 10. Defaults to 5.")
+    ) -> Chunks:
         """ use this tool to search in the vector store """
 
         result = []
 
-        async for chunk in self.store.search(query=query, count=count):
+        async for chunk in self.store.search(query=query, k=k or 5):
             result.append(chunk)
 
         return Chunks(chunks=result)
@@ -31,5 +39,23 @@ class VectorSearch(Tools):
 
         return "saved"
 
-def vector(store: VectorStore) -> ToolDef:
-    return VectorSearch(store)
+async def vector(
+    store: VectorDatabase | Callable[[...], Awaitable[VectorDatabase]],
+    initial: List[Document] = None
+) -> ToolDef:
+    vector_store: VectorDatabase
+
+    match store:
+        case VectorDatabase():
+            vector_store = store
+        case _:
+            vector_store = await store()
+
+    async def docs():
+        for doc in initial:
+            yield doc
+
+    if initial:
+        await vector_store.store(docs())
+
+    return VectorStore(vector_store)
