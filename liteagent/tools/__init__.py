@@ -14,7 +14,7 @@ from .vision import vision
 from .calc import calculator
 from .clock import clock
 from .py import python_runner
-from .vector import vector
+from .vector import vector_store
 from .apis import ipify, chuck_norris
 from .brasil_api import brasil_api
 from .currency_api import currency_api
@@ -36,7 +36,7 @@ __all__ = [
     'calculator',
     'clock',
     'python_runner',
-    'vector',
+    'vector_store',
     'http',
     'currency_api',
     'chuck_norris',

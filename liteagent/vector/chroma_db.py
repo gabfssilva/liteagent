@@ -9,6 +9,7 @@ from chromadb.api.models import AsyncCollection
 
 from liteagent.vector import VectorDatabase, Document, Chunk
 
+
 class Chroma(VectorDatabase):
     collection: AsyncCollection
     store_batch_size: int
@@ -60,3 +61,8 @@ class Chroma(VectorDatabase):
             documents=[doc.content for doc in batch],
             metadatas=[doc.metadata for doc in batch]
         )
+
+
+async def chroma(
+    collection: Union[AsyncCollection, str] = None,
+) -> VectorDatabase: return await Chroma.create(collection)

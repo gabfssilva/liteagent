@@ -2,8 +2,8 @@ import asyncio
 
 from liteagent import agent
 from liteagent.providers import openai
-from liteagent.tools import vector
-from liteagent.vector import InMemory
+from liteagent.tools import vector_store
+from liteagent.vector import in_memory, token_chunking
 from liteagent.vector.loaders import from_url
 
 
@@ -35,7 +35,11 @@ async def main():
         )
     )
 
-    vector_search = await vector(store=InMemory(), initial=list(documents))
+    vector_search = await vector_store(
+        store=in_memory(),
+        initial=list(documents),
+        chunking_strategy=token_chunking(),
+    )
 
     @agent(
         provider=openai(model="gpt-4o"),
@@ -48,11 +52,12 @@ async def main():
     )
     async def rag_agent() -> str:  pass
 
-    await rag_agent("Juliet says: 'My ears have yet not drunk...', what did she say next? What about Romeo's answer?")
-
+    await rag_agent(
+        "What does Juliet says right after: 'My ears have yet not drunk...'? What was **EXACTLY** Romeo's answer then?"
+    )
     await rag_agent("Which book is the Mock Turtle from?")
-
     await rag_agent("What's Victor Frankenstein father's name?")
+    await rag_agent("In Frankenstein, which people got the scarlet fever?")
 
 
 if __name__ == '__main__':
