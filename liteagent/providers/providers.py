@@ -4,9 +4,11 @@ from functools import partial
 from google import genai
 from llama_cpp import Llama
 from openai import AsyncOpenAI
+from anthropic import AsyncAnthropic
 
 from liteagent.providers import OpenAICompatible, Provider, Ollama, LlamaCpp, Transformer
 from liteagent.providers.gemini_provider import Gemini
+from liteagent.providers.claude_provider import Claude
 
 
 def gemini(
@@ -80,3 +82,19 @@ deepseek: partial[Provider] = partial(
     api_key=os.getenv('DEEPSEEK_API_KEY'),
     max_tokens=8192
 )
+
+
+def claude(
+    model: str = 'claude-3-7-sonnet-20250219',
+    client: AsyncAnthropic = None,
+    api_key: str = None,
+    **kwargs
+) -> Provider:
+    return Claude(
+        client=client or AsyncAnthropic(
+            api_key=api_key or os.getenv('ANTHROPIC_API_KEY'),
+        ),
+        model=model,
+        max_tokens=32768,
+        **kwargs
+    )

@@ -3,7 +3,7 @@ from . import openalex
 from . import websearch
 from . import wikipedia
 from . import py
-from .http import http
+from .http_decorator import http
 from .openalex import openalex
 from .duckduckgo import duckduckgo
 from .crawl4ai import crawl4ai
@@ -20,6 +20,7 @@ from .brasil_api import brasil_api
 from .currency_api import currency_api
 from .email_sender import email_sender
 from .yfinance import yfinance
+from .reddit import reddit
 
 __all__ = [
     'openalex',
@@ -42,5 +43,6 @@ __all__ = [
     'chuck_norris',
     'brasil_api',
     'email_sender',
-    'yfinance'
+    'yfinance',
+    'reddit'
 ]

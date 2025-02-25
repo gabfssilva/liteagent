@@ -136,5 +136,5 @@ class Memoria(Tools):
         return "Memory deleted successfully." if success else "Memory not found."
 
 
-def memoria(storage: Storage = FileStorage('./brain.json')) -> Tools:
-    return Memoria(storage=storage)
+def memoria(storage: Storage = None) -> Tools:
+    return Memoria(storage=storage or FileStorage('./brain.json'))

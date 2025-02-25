@@ -137,6 +137,24 @@ wheels = [
 ]
 
 [[package]]
+name = "anthropic"
+version = "0.47.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "jiter" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fd/d9/13cf8a01817dc3b7aeca7e947a4b565ec9c9ee584a40051461969889e60e/anthropic-0.47.1.tar.gz", hash = "sha256:032e900a650077677c2970c1bffd54b2c274907fab7e226ec0e6a8540d422e97", size = 207769 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/92/f8/05c68c9cf935720ca4fb013e1155fa006f9deb562f6ac8a55c8d732491ab/anthropic-0.47.1-py3-none-any.whl", hash = "sha256:a822e8731613026410f7819604c58ccab50416158ccdda3b96a3abaf3a061453", size = 239496 },
+]
+
+[[package]]
 name = "anyio"
 version = "4.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -157,6 +175,33 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/29/38/b3395cc9ad1b56d2ddac9970bc8f4141312dbaec28bc7c218b0dfafd0f42/asgiref-3.8.1.tar.gz", hash = "sha256:c343bd80a0bec947a9860adb4c432ffa7db769836c64238fc34bdc3fec84d590", size = 35186 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/39/e3/893e8757be2612e6c266d9bb58ad2e3651524b5b40cf56761e985a28b13e/asgiref-3.8.1-py3-none-any.whl", hash = "sha256:3e1e3ecc849832fe52ccf2cb6686b7a55f82bb1d6aee72a58826471390335e47", size = 23828 },
+]
+
+[[package]]
+name = "asyncpraw"
+version = "7.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiofiles" },
+    { name = "asyncprawcore" },
+    { name = "update-checker" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/07/a3/b43b12d9ca5ab84bb97b3ba08c645faa7864b949f9976e729e3584b16c7c/asyncpraw-7.2.0.tar.gz", hash = "sha256:7890414f0c5f8f3747dfe8a4a1ca3348064ef124f17b744cf0d12f8e202d38cd", size = 9701159 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ac/7c/600e710a9df7182bb3d5923ea06b4bf7dfdce84b03a2240a30eb5dcfb3b6/asyncpraw-7.2.0-py3-none-any.whl", hash = "sha256:817a4881ce84bda17a207f93156419825c7934b227244a8f05bdfcf557134181", size = 164902 },
+]
+
+[[package]]
+name = "asyncprawcore"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "yarl" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1e/0a/45dfc8c3b91d74f646817db3e89baecbd963a8374e2a8a33f2eb83c7e398/asyncprawcore-2.4.0.tar.gz", hash = "sha256:3a3359e5cd1ebe61d544a09d4b5eca7b16edfd17de07081a8415fc794f7bb62e", size = 18072 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1d/a0/a1f216c7ad7fd94482242eb92d6903c0ed5f3340436b952db2a42d2eddeb/asyncprawcore-2.4.0-py3-none-any.whl", hash = "sha256:3fe0f85d783ad0fd2a5d68d219b576bdbe04260ad7195c8a035d8724f57cfa45", size = 19741 },
 ]
 
 [[package]]
@@ -1181,6 +1226,8 @@ source = { virtual = "." }
 dependencies = [
     { name = "aiocache" },
     { name = "aiosmtpd" },
+    { name = "anthropic" },
+    { name = "asyncpraw" },
     { name = "chromadb" },
     { name = "crawl4ai" },
     { name = "datasets" },
@@ -1215,6 +1262,8 @@ dependencies = [
 requires-dist = [
     { name = "aiocache", specifier = ">=0.12.3" },
     { name = "aiosmtpd", specifier = ">=1.4.6" },
+    { name = "anthropic", specifier = ">=0.47.1" },
+    { name = "asyncpraw", specifier = ">=7.2.0" },
     { name = "chromadb", specifier = ">=0.6.3" },
     { name = "crawl4ai", specifier = ">=0.4.248" },
     { name = "datasets", specifier = ">=3.2.0" },
@@ -3372,6 +3421,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/43/0f/fa4723f22942480be4ca9527bbde8d43f6c3f2fe8412f00e7f5f6746bc8b/tzdata-2025.1.tar.gz", hash = "sha256:24894909e88cdb28bd1636c6887801df64cb485bd593f2fd83ef29075a81d694", size = 194950 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0f/dd/84f10e23edd882c6f968c21c2434fe67bd4a528967067515feca9e611e5e/tzdata-2025.1-py2.py3-none-any.whl", hash = "sha256:7e127113816800496f027041c570f50bcd464a020098a3b6b199517772303639", size = 346762 },
+]
+
+[[package]]
+name = "update-checker"
+version = "0.18.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5c/0b/1bec4a6cc60d33ce93d11a7bcf1aeffc7ad0aa114986073411be31395c6f/update_checker-0.18.0.tar.gz", hash = "sha256:6a2d45bb4ac585884a6b03f9eade9161cedd9e8111545141e9aa9058932acb13", size = 6699 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0c/ba/8dd7fa5f0b1c6a8ac62f8f57f7e794160c1f86f31c6d0fb00f582372a3e4/update_checker-0.18.0-py3-none-any.whl", hash = "sha256:cbba64760a36fe2640d80d85306e8fe82b6816659190993b7bdabadee4d4bbfd", size = 7008 },
 ]
 
 [[package]]

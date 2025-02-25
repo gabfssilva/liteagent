@@ -13,6 +13,7 @@ from typing import Type, Callable, Awaitable, Protocol, runtime_checkable
 from pydantic import BaseModel, JsonValue, create_model
 from pydantic.fields import FieldInfo, Field
 
+
 @dataclass
 class Tool:
     name: str
@@ -28,16 +29,16 @@ class Tool:
             if schema.get("type") == "object":
                 schema["strict"] = True
                 schema["additionalProperties"] = False
-            
+
             # Recursively process nested properties
             if "properties" in schema:
                 for key, sub_schema in schema["properties"].items():
                     schema["properties"][key] = self._prepare(sub_schema)
-            
+
             # Handle 'items' if this is an array
             if "items" in schema:
                 schema["items"] = self._prepare(schema["items"])
-            
+
             # Handle `$defs` (reusable schemas)
             if "$defs" in schema:
                 for key, sub_schema in schema["$defs"].items():
@@ -49,7 +50,7 @@ class Tool:
     def definition(self):
         schema = self.input.model_json_schema()
         modified_schema = self._prepare(schema)
-        
+
         return {
             "type": "function",
             "function": {
@@ -59,7 +60,7 @@ class Tool:
                 "parameters": modified_schema,
             }
         }
-    
+
     async def _unsafe_call(self, **kwargs):
         input_data = self.input(**kwargs)
 
@@ -103,12 +104,15 @@ class Tools:
     def base_name(self) -> str:
         return re.sub(r'(?<!^)(?=[A-Z])', '_', self.__class__.__name__).lower()
 
+
 ToolDef = Tool | typing.List[Tool] | Tools | Callable[[...], Awaitable[str | dict | BaseModel]] | Awaitable['ToolDef']
+
 
 @runtime_checkable
 class ToolResponse(Protocol):
     def __tool_response__(self) -> JsonValue:
         pass
+
 
 def parse_tool(
     function: Callable,
@@ -126,6 +130,9 @@ def parse_tool(
 
     if description is None:
         description = inspect.getdoc(function)
+
+    if description is None:
+        description = f"Tool {name}"
 
     input_fields = [
         (n,

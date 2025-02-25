@@ -7,6 +7,8 @@ requires-python = ">=3.12"
 dependencies = [
     "aiocache>=0.12.3",
     "aiosmtpd>=1.4.6",
+    "anthropic>=0.47.1",
+    "asyncpraw>=7.2.0",
     "chromadb>=0.6.3",
     "crawl4ai>=0.4.248",
     "datasets>=3.2.0",
