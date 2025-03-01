@@ -13,6 +13,8 @@ from typing import Type, Callable, Awaitable, Protocol, runtime_checkable
 from pydantic import BaseModel, JsonValue, create_model
 from pydantic.fields import FieldInfo, Field
 
+from liteagent.internal import audit
+
 
 @dataclass
 class Tool:
