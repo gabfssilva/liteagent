@@ -9,4 +9,5 @@ from liteagent.tools import currency_api, calculator
 async def currency_agent(amount_from: str, in_currency: str) -> str:
     """ how much is {amount_from} in {in_currency}? """
 
-asyncio.run(currency_agent(amount_from='20 BRL', in_currency='USD'))
+if __name__ == "__main__":
+    asyncio.run(currency_agent(amount_from='20 BRL', in_currency='USD'))

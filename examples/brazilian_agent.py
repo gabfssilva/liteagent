@@ -12,4 +12,5 @@ from liteagent.tools import brasil_api
 async def brazilian_agent() -> str:
     """ what's the current CDI rate?  """
 
-asyncio.run(brazilian_agent())
+if __name__ == "__main__":
+    asyncio.run(brazilian_agent())

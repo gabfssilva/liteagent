@@ -17,5 +17,5 @@ async def news(country: str) -> str:
     Use a critical tone.
     """
 
-
-asyncio.run(news(country='USA'))
+if __name__ == "__main__":
+    asyncio.run(news(country='USA'))

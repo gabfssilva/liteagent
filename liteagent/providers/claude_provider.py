@@ -9,6 +9,7 @@ from liteagent import Tool
 from liteagent.providers import Provider
 from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage, ImageURL, \
     ImageBase64, MessageContent
+from liteagent.internal import register_provider
 
 from pydantic import BaseModel
 
@@ -210,3 +211,11 @@ class Claude(Provider):
                 # Default case
                 case _:
                     pass
+                    
+    async def destroy(self):
+        """
+        Close and clean up resources used by the Claude provider.
+        Closes the AsyncAnthropic client.
+        """
+        if hasattr(self, 'client') and hasattr(self.client, 'close'):
+            await self.client.close()

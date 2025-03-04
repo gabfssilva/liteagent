@@ -32,4 +32,5 @@ async def main():
         ImageURL(url="https://img.buzzfeed.com/buzzfeed-static/static/2022-09/6/17/asset/15e2b0da8566/sub-buzz-677-1662483766-1.jpg"),
     )
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

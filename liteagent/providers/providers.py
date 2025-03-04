@@ -9,20 +9,25 @@ from anthropic import AsyncAnthropic
 from liteagent.providers import OpenAICompatible, Provider, Ollama, LlamaCpp, Transformer
 from liteagent.providers.gemini_provider import Gemini
 from liteagent.providers.claude_provider import Claude
+from liteagent.providers.azure_ai import AzureAI
+from liteagent.internal.cleanup import register_provider
 
 
+@register_provider
 def gemini(
     client: genai.Client = genai.Client(),
     model: str = "gemini-2.0-flash"
 ) -> Provider: return Gemini(client, model)
 
 
+@register_provider
 def transformer(
     model: str = "meta-llama/Llama-3.2-3B",
     **kwargs
 ) -> Provider: return Transformer(model=model, **kwargs)
 
 
+@register_provider
 def llamacpp(
     llm: Llama = None
 ) -> Provider:
@@ -36,13 +41,13 @@ def llamacpp(
     ))
 
 
+@register_provider
 def ollama(
     model: str = 'llama3.2',
     automatic_download: bool = True
-) -> Provider:
-    return Ollama(model=model, automatic_download=automatic_download)
+) -> Provider: return Ollama(model=model, automatic_download=automatic_download)
 
-
+@register_provider
 def openai_compatible(
     model: str,
     client: AsyncOpenAI = None,
@@ -60,6 +65,35 @@ def openai_compatible(
         **kwargs
     )
 
+@register_provider
+def azureai(
+    model: str = 'gpt-4o-mini',
+    base_url: str = 'https://models.inference.ai.azure.com',
+    api_key: str = None,
+    **kwargs
+) -> Provider:
+    return AzureAI(
+        model=model,
+        base_url=base_url,
+        api_key=api_key,
+        **kwargs
+    )
+
+@register_provider
+def claude(
+    model: str = 'claude-3-7-sonnet-20250219',
+    client: AsyncAnthropic = None,
+    api_key: str = None,
+    **kwargs
+) -> Provider:
+    return Claude(
+        client=client or AsyncAnthropic(
+            api_key=api_key or os.getenv('ANTHROPIC_API_KEY'),
+        ),
+        model=model,
+        max_tokens=32768,
+        **kwargs
+    )
 
 openai: partial[Provider] = partial(
     openai_compatible,
@@ -83,18 +117,4 @@ deepseek: partial[Provider] = partial(
     max_tokens=8192
 )
 
-
-def claude(
-    model: str = 'claude-3-7-sonnet-20250219',
-    client: AsyncAnthropic = None,
-    api_key: str = None,
-    **kwargs
-) -> Provider:
-    return Claude(
-        client=client or AsyncAnthropic(
-            api_key=api_key or os.getenv('ANTHROPIC_API_KEY'),
-        ),
-        model=model,
-        max_tokens=32768,
-        **kwargs
-    )
+github: partial[Provider] = partial(azureai, api_key=os.getenv('GITHUB_TOKEN'))

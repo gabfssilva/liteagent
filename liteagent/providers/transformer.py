@@ -4,6 +4,7 @@ from typing import AsyncIterator, Type
 from attr.validators import max_len
 
 from liteagent import Message, Tool
+from liteagent.internal import register_provider
 from liteagent.providers import Provider
 from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage
 

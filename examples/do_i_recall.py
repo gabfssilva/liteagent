@@ -16,4 +16,5 @@ async def main():
     await memorizer("Check my IP address. Also, my name is Gabriel. You have to remember both for me.")
     await memorizer("what was my name again? what about my IP?")
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

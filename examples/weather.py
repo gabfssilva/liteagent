@@ -21,5 +21,5 @@ async def weather_agent(city: str) -> str:
     - Weather Conditions (e.g. Sunny, Cloudy, etc.)
     """
 
-
-asyncio.run(weather_agent(city="Sao Paulo"))
+if __name__ == "__main__":
+    asyncio.run(weather_agent(city="Sao Paulo"))

@@ -21,6 +21,10 @@ from .currency_api import currency_api
 from .email_sender import email_sender
 from .yfinance import yfinance
 from .reddit import reddit
+from .arxiv import arxiv
+from .semantic_scholar import semantic_scholar
+from .scopus import scopus
+from .web_of_science import web_of_science
 
 __all__ = [
     'openalex',
@@ -44,5 +48,9 @@ __all__ = [
     'brasil_api',
     'email_sender',
     'yfinance',
-    'reddit'
+    'reddit',
+    'arxiv',
+    'semantic_scholar',
+    'scopus',
+    'web_of_science'
 ]

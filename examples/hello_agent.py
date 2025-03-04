@@ -3,7 +3,7 @@ import asyncio
 from pydantic import BaseModel
 
 from liteagent import agent, tool
-from liteagent.providers import gemini
+from liteagent.providers import github
 
 
 class Person(BaseModel):
@@ -27,10 +27,11 @@ def personal_info() -> Person: return Person(
 
 
 @agent(
-    provider=gemini(),
+    provider=github(model="Cohere-command-r-plus-08-2024"),
     tools=[personal_info]
 )
 async def hello_agent() -> str: ...
 
 
-asyncio.run(hello_agent("who am I?"))
+if __name__ == "__main__":
+    asyncio.run(hello_agent("who am I?"))

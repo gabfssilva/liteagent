@@ -48,20 +48,69 @@ class Tool:
 
         return schema
 
+    def _make_all_fields_required(self, schema):
+        """Recursively makes all fields required in the schema."""
+        if not isinstance(schema, dict):
+            return
+
+        # Make all properties required at current level
+        if "properties" in schema:
+            schema["required"] = list(schema["properties"].keys())
+
+            # Process each property recursively
+            for property_schema in schema["properties"].values():
+                self._make_all_fields_required(property_schema)
+
+        # Process items for arrays
+        if "items" in schema:
+            self._make_all_fields_required(schema["items"])
+
+        # Process definitions
+        if "$defs" in schema:
+            for def_schema in schema["$defs"].values():
+                self._make_all_fields_required(def_schema)
+
+    @property
+    def input_schema(self):
+        schema = self._prepare(self.input.model_json_schema())
+        self._remove_defaults(schema)
+        self._make_all_fields_required(schema)
+        return schema
+
     @property
     def definition(self):
-        schema = self.input.model_json_schema()
-        modified_schema = self._prepare(schema)
-
         return {
             "type": "function",
             "function": {
                 "name": self.name,
                 "description": self.description,
                 "strict": True,
-                "parameters": modified_schema,
+                "parameters": self.input_schema,
             }
         }
+
+    def _remove_defaults(self, schema):
+        """Recursively removes default values from the schema."""
+        if not isinstance(schema, dict):
+            return
+
+        # Remove default at the current level
+        if "default" in schema:
+            del schema["default"]
+
+        # Process properties recursively
+        if "properties" in schema:
+            for property_schema in schema["properties"].values():
+                self._remove_defaults(property_schema)
+
+        # Process items for arrays
+        if "items" in schema:
+            self._remove_defaults(schema["items"])
+
+        # Process definitions
+        if "$defs" in schema:
+            for def_schema in schema["$defs"].values():
+                self._remove_defaults(def_schema)
 
     async def _unsafe_call(self, **kwargs):
         input_data = self.input(**kwargs)

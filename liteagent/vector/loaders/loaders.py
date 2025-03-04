@@ -1,5 +1,4 @@
 from liteagent import Provider
-from liteagent.providers import openai
 from liteagent.vector.loaders import DocumentLoader, URLDocumentLoader, PDFDocumentLoader
 
 
@@ -8,7 +7,7 @@ def from_url(
     id: str = None,
     metadata: dict = None,
     infer_metadata: bool = True,
-    metadata_infer_provider: Provider = openai()
+    metadata_infer_provider: Provider = None
 ) -> DocumentLoader:
     return URLDocumentLoader(
         url,
@@ -24,7 +23,7 @@ def from_pdf(
     id: str = None,
     metadata: dict = None,
     infer_metadata: bool = True,
-    metadata_infer_provider: Provider = openai()
+    metadata_infer_provider: Provider = None
 ) -> DocumentLoader:
     return PDFDocumentLoader(
         url,

@@ -15,7 +15,10 @@ class DocumentLoader(ABC):
     def __await__(self):
         return self.__call__().__await__()
 
-    async def extract_metadata(self, url: str, metadata_infer_provider: Provider = openai()) -> dict:
+    async def extract_metadata(self, url: str, metadata_infer_provider: Provider = None) -> dict:
+        if not metadata_infer_provider:
+            metadata_infer_provider = openai()
+
         @agent(provider=metadata_infer_provider, tools=[read_pdf_from_url, crawl4ai], intercept=None)
         async def metadata_extractor(url: str) -> AutomaticMetadata:
             """

@@ -6,6 +6,7 @@ from openai.types.chat import ChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import ChoiceDelta, Choice
 
 from liteagent import Tool
+from liteagent.internal import register_provider
 from liteagent.providers import Provider
 from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage, ImageURL, \
     ImageBase64, MessageContent
@@ -13,7 +14,6 @@ from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, As
 from openai import AsyncOpenAI, NOT_GIVEN
 
 from pydantic import BaseModel
-
 
 class OpenAICompatible(Provider):
     name: str = "openai"

@@ -9,12 +9,14 @@ from liteagent.message import ImageURL, TextContent
 from liteagent.providers import Provider
 from liteagent.providers import ollama
 
-
 def vision(
     name: str='Vision Agent', 
     system_message: str='Your job is to make accurate statements on a particular image based on the provided instructions.',
-    provider: Provider=ollama(model='moondream:1.8b')
+    provider: Provider = None
 ) -> Tool:
+    if not provider:
+        provider = ollama(model='moondream:1.8b')
+
     @agent(
         name=name,
         system_message=system_message,

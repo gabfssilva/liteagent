@@ -21,4 +21,5 @@ async def stock_agent(tickers: list[str]) -> str:
     """
 
 
-asyncio.run(stock_agent(tickers=['NVDA', 'AAPL', 'MSFT', 'TSLA']))
+if __name__ == "__main__":
+    asyncio.run(stock_agent(tickers=['NVDA', 'AAPL', 'MSFT', 'TSLA']))

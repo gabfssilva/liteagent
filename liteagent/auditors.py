@@ -46,7 +46,7 @@ def minimal(truncate: int = 80):
                     def add_user_content_output(content, agg=""):
                         match content:
                             case str():
-                                outputs.append(Padding(Markdown(content, code_theme="ansi-light"), pad=(0, 0, 0, 4)))
+                                add_output(Padding(Markdown(content, code_theme="ansi-light"), pad=(0, 0, 0, 4)))
                             case ImageURL(url=url):
                                 add_output(Padding(Markdown(f"[🖼]({url})", code_theme="ansi-light"), pad=(0, 0, 0, 4)))
                             case ImageBase64():

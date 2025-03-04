@@ -48,10 +48,10 @@ class TokenChunking(ChunkingStrategy):
 
 
 def token_chunking(
-    tokenizer: Tokenizer = transformers_tokenizer(),
+    tokenizer: Tokenizer = None,
     max_tokens: int = 5000,
     overlap: int = 500
-) -> ChunkingStrategy: return TokenChunking(tokenizer, max_tokens, overlap)
+) -> ChunkingStrategy: return TokenChunking(tokenizer or transformers_tokenizer(), max_tokens, overlap)
 
 
 def word_chunking(

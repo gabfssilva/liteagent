@@ -32,7 +32,7 @@ async def email_sender_agent(email: str) -> str:
     - send them as a markdown table to the following e-mail: {email}
     """
 
-
-controller.start()
-asyncio.run(email_sender_agent(email="receiver@example.com"))
-controller.stop()
+if __name__ == "__main__":
+    controller.start()
+    asyncio.run(email_sender_agent(email="receiver@example.com"))
+    controller.stop()

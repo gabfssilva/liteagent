@@ -1,4 +1,3 @@
-import base64
 import json
 from abc import ABC
 from typing import Type, AsyncIterator, Callable
@@ -8,12 +7,14 @@ from ollama import AsyncClient, ChatResponse
 from pydantic import BaseModel, TypeAdapter
 
 from liteagent import Tool, ToolResponse
+from liteagent.internal import register_provider
 from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, ImageBase64, ImageURL, \
     ImageContent
 from liteagent.providers import Provider
 
 
 class Ollama(Provider, ABC):
+    name: str = "ollama"
     client: AsyncClient
     model: str
     automatic_download: bool

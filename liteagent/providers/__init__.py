@@ -4,7 +4,8 @@ from .ollama_provider import Ollama
 from .llamacpp import LlamaCpp
 from .transformer import Transformer
 from .claude_provider import Claude
-from .providers import openai, openrouter, deepseek, ollama, llamacpp, transformer, gemini, claude
+from .azure_ai import AzureAI
+from .providers import openai, openrouter, deepseek, ollama, llamacpp, transformer, gemini, claude, github, azureai
 
 __all__ = [
     "Provider",
@@ -13,11 +14,14 @@ __all__ = [
     "LlamaCpp",
     "Ollama",
     "Claude",
+    "AzureAI",
     "openai",
     "openrouter",
     "deepseek",
     "ollama",
     "transformer",
     "gemini",
-    "claude"
+    "claude",
+    "github",
+    "azureai"
 ]
