@@ -1,18 +1,15 @@
 import json
-from typing import AsyncIterator, Type, Any, Dict
+from typing import AsyncIterator, Type
 
 from anthropic import AsyncAnthropic
 from anthropic._types import NOT_GIVEN
-from anthropic.types import MessageStreamEvent, ContentBlockDeltaEvent, ToolUseBlock
 
 from liteagent import Tool
-from liteagent.providers import Provider
+from liteagent.provider import Provider
 from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage, ImageURL, \
     ImageBase64, MessageContent
-from liteagent.internal import register_provider
 
 from pydantic import BaseModel
-
 
 class Claude(Provider):
     name: str = "claude"

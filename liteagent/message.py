@@ -1,4 +1,4 @@
-from typing import Literal, Union
+from typing import Literal, Union, List
 
 from pydantic import BaseModel, Field, JsonValue
 from pydantic.json_schema import SkipJsonSchema
@@ -35,6 +35,9 @@ Content = TextContent | ImageContent | dict | JsonValue | ToolRequest | BaseMode
 
 MessageContent = Content | list[Content]
 
+class AgentParent(BaseModel):
+    name: str = Field(..., description="The name of the parent agent.")
+    tool_id: str = Field(..., description="The ID of the parent tool.")
 
 class Message(BaseModel):
     """
@@ -42,13 +45,13 @@ class Message(BaseModel):
     """
     role: Role
     content: MessageContent = Field(..., description="The content of the message.")
-
+    parent: SkipJsonSchema[AgentParent | None] = None
 
 class UserMessage(Message):
     """
     Represents a message from the user.
     """
-    role: str = Field("user", description="The role of the message.")
+    role: str = Field(default="user", description="The role of the message.")
     content: MessageContent = Field(..., description="The content of the user's message.")
 
 

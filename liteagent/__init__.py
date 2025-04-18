@@ -1,12 +1,13 @@
 from .prompts import TOOL_AGENT_PROMPT
 from .tool import Tool, Tools, ToolDef, ToolResponse
 from .message import Message, SystemMessage, AssistantMessage, UserMessage, ToolMessage, ToolRequest, ImageURL, ImageBase64
-from .providers import Provider
+from .provider import Provider
 from . import auditors
 from .agent import Agent
 from .decorators import agent, tool, team
 from . import providers
 from .auto_function import auto_function
+from .session import session, Session
 
 __all__ = [
     "Agent",
@@ -30,4 +31,6 @@ __all__ = [
     "auto_function",
     "ImageURL",
     "ImageBase64",
+    "session",
+    "Session"
 ]

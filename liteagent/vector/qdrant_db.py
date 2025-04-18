@@ -27,10 +27,14 @@ class Qdrant(VectorDatabase):
         collection_name: str = "default",
         url: str = "http://localhost:6333",
         api_key: str = None,
-        tokenizer: Tokenizer = fastembed_tokenizer(),
+        tokenizer: Tokenizer = None,
         dimension: int = 384
     ) -> 'Qdrant':
         """Create and initialize a Qdrant instance"""
+
+        if not tokenizer:
+            tokenizer = fastembed_tokenizer()
+
         client = AsyncQdrantClient(url=url, api_key=api_key)
         
         # Check if collection exists, if not create it
@@ -115,7 +119,7 @@ async def qdrant(
     collection_name: str = "default",
     url: str = "http://localhost:6333",
     api_key: str = None,
-    tokenizer: Tokenizer = fastembed_tokenizer(),
+    tokenizer: Tokenizer = None,
     dimension: int = 384
 ) -> VectorDatabase:
     """
@@ -131,10 +135,11 @@ async def qdrant(
     Returns:
         An initialized Qdrant instance
     """
+
     return await Qdrant.create(
         collection_name=collection_name,
         url=url,
         api_key=api_key,
-        tokenizer=tokenizer,
+        tokenizer=tokenizer or fastembed_tokenizer(),
         dimension=dimension
     )

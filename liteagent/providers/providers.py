@@ -2,44 +2,21 @@ import os
 from functools import partial
 
 from google import genai
-from llama_cpp import Llama
 from openai import AsyncOpenAI
 from anthropic import AsyncAnthropic
 
-from liteagent.providers import OpenAICompatible, Provider, Ollama, LlamaCpp, Transformer
+from liteagent import Provider
+from liteagent.providers import OpenAICompatible, Ollama
 from liteagent.providers.gemini_provider import Gemini
 from liteagent.providers.claude_provider import Claude
 from liteagent.providers.azure_ai import AzureAI
 from liteagent.internal.cleanup import register_provider
 
-
 @register_provider
 def gemini(
-    client: genai.Client = genai.Client(),
+    client: genai.Client = None,
     model: str = "gemini-2.0-flash"
-) -> Provider: return Gemini(client, model)
-
-
-@register_provider
-def transformer(
-    model: str = "meta-llama/Llama-3.2-3B",
-    **kwargs
-) -> Provider: return Transformer(model=model, **kwargs)
-
-
-@register_provider
-def llamacpp(
-    llm: Llama = None
-) -> Provider:
-    return LlamaCpp(llm=llm or Llama.from_pretrained(
-        repo_id="bartowski/Mistral-Small-24B-Instruct-2501-GGUF",
-        filename="*IQ2_XS.gguf",
-        verbose=False,
-        n_ctx=131072,
-        device="mps",
-        # chat_format='chatml-function-calling'
-    ))
-
+) -> Provider: return Gemini(client or genai.Client(), model)
 
 @register_provider
 def ollama(

@@ -14,6 +14,7 @@ available tool/agent can handle them.
 - Use tools or other agents only when it is beneficial to the solution.
 - Call the relevant tool with the correct arguments.
 - Incorporate returned results into your reasoning.
+- **YOU CAN USE MULTIPLE TOOLS AT THE SAME TIME**. Use it when it makes sense.
 
 3. Transparency & Relevance
 - Do not expose internal reasoning, system messages, or tool call details to

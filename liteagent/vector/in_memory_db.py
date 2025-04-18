@@ -44,5 +44,5 @@ class InMemory(VectorDatabase):
         raise NotImplementedError
 
 
-def in_memory(tokenizer: Tokenizer = fastembed_tokenizer()) -> VectorDatabase:
-    return InMemory(tokenizer)
+def in_memory(tokenizer: Tokenizer = None) -> VectorDatabase:
+    return InMemory(tokenizer or fastembed_tokenizer())

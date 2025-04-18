@@ -1,12 +1,10 @@
 import functools
-import functools
 import inspect
 import time
 import traceback
 from typing import Callable, Optional, Any, Dict
 
 import structlog
-
 
 def audit[T](
     log_exceptions: bool = True,

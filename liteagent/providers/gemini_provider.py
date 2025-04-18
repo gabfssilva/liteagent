@@ -5,7 +5,7 @@ from pydantic import BaseModel, TypeAdapter
 from liteagent import Tool
 from liteagent.internal import register_provider
 from liteagent.message import ToolRequest, Message, AssistantMessage
-from liteagent.providers import Provider
+from liteagent.provider import Provider
 
 from google import genai
 from google.genai import types

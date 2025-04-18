@@ -14,7 +14,7 @@ async def search(
     """ Searches Wikipedia for a query and returns summaries of matching articles. """
     url = f"https://en.wikipedia.org/w/rest.php/v1/search/page?q={query}&limit={limit}"
 
-    async with httpx.AsyncClient(verify=False) as client:
+    async with httpx.AsyncClient() as client:
         response = await client.get(url)
         response.raise_for_status()
         data = response.json()
@@ -34,7 +34,7 @@ async def get_complete_article(url: str = Field(..., description="The URL of the
     if not url.startswith("https://en.wikipedia.org/wiki/"):
         raise Exception("URL isn't from a Wikipedia page")
 
-    async with httpx.AsyncClient(verify=False) as client:
+    async with httpx.AsyncClient() as client:
         response = await client.get(url)
         response.raise_for_status()
         html_content = response.text

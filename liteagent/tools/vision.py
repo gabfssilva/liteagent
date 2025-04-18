@@ -1,13 +1,10 @@
-
-
 from functools import partial
 from typing import Callable
 
 from pydantic import Field
 from liteagent import Agent, agent, tool, Tool
 from liteagent.message import ImageURL, TextContent
-from liteagent.providers import Provider
-from liteagent.providers import ollama
+from liteagent.provider import Provider
 
 def vision(
     name: str='Vision Agent', 
@@ -15,6 +12,8 @@ def vision(
     provider: Provider = None
 ) -> Tool:
     if not provider:
+        from liteagent.providers import ollama
+
         provider = ollama(model='moondream:1.8b')
 
     @agent(

@@ -7,11 +7,9 @@ from ollama import AsyncClient, ChatResponse
 from pydantic import BaseModel, TypeAdapter
 
 from liteagent import Tool, ToolResponse
-from liteagent.internal import register_provider
 from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, ImageBase64, ImageURL, \
     ImageContent
-from liteagent.providers import Provider
-
+from liteagent.provider import Provider
 
 class Ollama(Provider, ABC):
     name: str = "ollama"

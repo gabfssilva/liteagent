@@ -106,7 +106,7 @@ class PgVector(VectorDatabase):
 
 async def pgvector(
     connection_string: str,
-    tokenizer: Tokenizer = fastembed_tokenizer(),
+    tokenizer: Tokenizer = None,
     dimension: int = 384,
     table_name: str = "vector_entries"
 ) -> VectorDatabase:
@@ -124,7 +124,7 @@ async def pgvector(
     """
     db = PgVector(
         connection_string=connection_string,
-        tokenizer=tokenizer,
+        tokenizer=tokenizer or fastembed_tokenizer(),
         dimension=dimension,
         table_name=table_name
     )

@@ -1,9 +1,8 @@
 from abc import abstractmethod
 from typing import AsyncIterator, Type
 
-from liteagent import Message
-from liteagent import Tool
-
+from .message import Message
+from .tool import Tool
 
 class Provider:
     name: str

@@ -2,8 +2,7 @@ import inspect
 from typing import List, Callable
 
 from .agent import Agent, AsyncInterceptor
-from .auditors import minimal
-from .providers import Provider
+from .provider import Provider
 from .tool import Tool, ToolDef, parse_tool
 
 
@@ -31,7 +30,7 @@ def agent[Out](
     system_message: str = None,
     tools: List[ToolDef] = None,
     team: List[Agent | Callable[[], Agent]] = None,
-    intercept: AsyncInterceptor | None = minimal()
+    intercept: AsyncInterceptor | None = None
 ) -> Callable[..., Agent[Out]]:
     def decorator(func: Callable) -> Agent[Out]:
         signature = inspect.signature(func)
@@ -63,7 +62,7 @@ def team(
     provider: Provider,
     system_message: str = None,
     tools: List[ToolDef] = None,
-    intercept: AsyncInterceptor | None = minimal(),
+    intercept: AsyncInterceptor | None = None,
     description: str = None
 ) -> Callable[..., Agent]:
     return agent(

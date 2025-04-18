@@ -8,7 +8,7 @@ from pydantic import BaseModel, TypeAdapter
 
 from liteagent.internal import register_provider
 from liteagent.tool import Tool
-from liteagent.providers import Provider
+from liteagent.provider import Provider
 from liteagent.message import Message, UserMessage, AssistantMessage, ToolRequest, ToolMessage
 
 class LlamaCpp(Provider, ABC):

@@ -3,7 +3,7 @@ import asyncio
 from pydantic import BaseModel
 
 from liteagent import agent, tool
-from liteagent.providers import github
+from liteagent.providers import github, ollama, deepseek
 
 
 class Person(BaseModel):
@@ -27,11 +27,11 @@ def personal_info() -> Person: return Person(
 
 
 @agent(
-    provider=github(model="Cohere-command-r-plus-08-2024"),
+    provider=deepseek(),
     tools=[personal_info]
 )
 async def hello_agent() -> str: ...
 
 
 if __name__ == "__main__":
-    asyncio.run(hello_agent("who am I?"))
+    print(asyncio.run(hello_agent("who am I?")))

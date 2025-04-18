@@ -1,4 +1,5 @@
-from typing import AsyncIterator
+from typing import AsyncIterator, Callable, TypeVar, Optional
+import asyncio
 
 from pydantic import BaseModel
 from rich.console import Console, Group
@@ -7,25 +8,29 @@ from rich.markdown import Markdown
 from rich.padding import Padding
 from rich.pretty import Pretty
 from rich.syntax import Syntax
+from rich.prompt import Prompt
 
 from liteagent import Message, AssistantMessage, ToolRequest, UserMessage, ToolMessage, ImageURL, ImageBase64
 
-console = Console()
 outputs = []
-live = Live(console=console)
-live.start()
+live: Live = None
 
 import atexit
 
-
 def exit_handler():
-    live.stop()
-
+    if live:
+        live.stop()
 
 atexit.register(exit_handler)
 
-
 def minimal(truncate: int = 80):
+    global live
+
+    if not live:
+        console = Console()
+        live = Live(console=console)
+        live.start()
+
     async def auditor(agent, messages: AsyncIterator[Message]) -> AsyncIterator[Message]:
         def msg(text: str) -> str:
             return f'({agent.name}) {text}'
@@ -118,3 +123,87 @@ def minimal(truncate: int = 80):
 
 
     return auditor
+
+T = TypeVar('T')
+
+def chat(func=None, *, truncate: int = 80, prompt: str = "👤 > "):
+    """
+    Create a console chat decorator that continuously prompts for user input 
+    and displays assistant responses in a pretty format.
+    
+    Can be used either directly before or after the @agent decorator:
+    
+    @chat
+    @agent(...)
+    async def my_agent() -> str: pass
+    
+    Or with parameters:
+    
+    @chat(prompt="You: ")
+    @agent(...)
+    async def my_agent() -> str: pass
+    
+    The decorated agent will have a .start() method that begins the interactive chat.
+    
+    Args:
+        func: The function to decorate (automatically provided when using @chat syntax)
+        truncate: Maximum length of tool responses before truncation
+        prompt: Text prompt to display when waiting for user input
+        
+    Returns:
+        A decorated agent function with a .start() method for interactive chat
+    """
+    def _decorate(agent_func):
+        # Add the start method for interactive chat
+        async def start_interactive_chat():
+            global live, outputs
+            
+            # Make sure we have a live console
+            console = Console()
+            if not live:
+                live = Live(console=console)
+                live.start()
+            
+            # Clear previous outputs
+            outputs.clear()
+            
+            # Keep track of conversation history
+            conversation = []
+            
+            try:
+                while True:
+                    # Get user input
+                    try:
+                        user_input = Prompt.ask(prompt)
+                        if user_input.lower() in ["exit", "quit", "q"]:
+                            break
+
+                        conversation.append(UserMessage(content=user_input))
+
+                        # Store messages for context in the next iteration
+                        async for message in await agent_func(*conversation):
+                            conversation.append(message)
+                            
+                    except (KeyboardInterrupt, EOFError):
+                        print("\nExiting chat...")
+                        break
+                    except Exception as e:
+                        console.print(f"[bold red]Error:[/bold red] {e}")
+            finally:
+                # Make sure live display is stopped before exiting
+                if live and live.is_started:
+                    live.stop()
+        
+        def start():
+            """Start the interactive chat session."""
+            asyncio.run(start_interactive_chat())
+            
+        # Add the start method to the agent function
+        agent_func.start = start
+        
+        return agent_func
+        
+    # Handle both @chat and @chat() syntax
+    if func is None:
+        return _decorate
+    return _decorate(func)

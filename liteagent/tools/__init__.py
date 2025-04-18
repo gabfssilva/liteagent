@@ -1,8 +1,7 @@
 from . import openalex
-
 from . import websearch
 from . import wikipedia
-from . import py
+
 from .http_decorator import http
 from .openalex import openalex
 from .duckduckgo import duckduckgo
@@ -25,6 +24,8 @@ from .arxiv import arxiv
 from .semantic_scholar import semantic_scholar
 from .scopus import scopus
 from .web_of_science import web_of_science
+from .confluence import confluence
+from .jira import jira
 
 __all__ = [
     'openalex',
@@ -52,5 +53,7 @@ __all__ = [
     'arxiv',
     'semantic_scholar',
     'scopus',
-    'web_of_science'
+    'web_of_science',
+    'confluence',
+    'jira'
 ]

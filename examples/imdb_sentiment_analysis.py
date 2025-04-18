@@ -4,7 +4,7 @@ from typing import Literal, AsyncIterator, Iterator, Tuple
 from datasets import load_dataset
 
 from liteagent import agent
-from liteagent.providers import ollama
+from liteagent.providers import openai
 
 Sentiment = Literal['positive', 'negative']
 
@@ -15,14 +15,13 @@ Result = Tuple[Sentiment, Sentiment]
 async def workflow(
     data: Iterator[Review],
 ) -> AsyncIterator[Result]:
-    @agent(provider=ollama('llama3.2'), intercept=None)
+    @agent(provider=openai(), intercept=None)
     async def classifier(review: str) -> Sentiment:
         """Evaluate the following review: {review}"""
 
     for review, expected in data:
         predicted = await classifier(review=review)
         yield predicted, expected
-
 
 async def main():
     imdb = load_dataset('scikit-learn/imdb', split='all')

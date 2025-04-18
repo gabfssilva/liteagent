@@ -22,4 +22,4 @@ async def weather_agent(city: str) -> str:
     """
 
 if __name__ == "__main__":
-    asyncio.run(weather_agent(city="Sao Paulo"))
+    print(asyncio.run(weather_agent(city="Sao Paulo")))

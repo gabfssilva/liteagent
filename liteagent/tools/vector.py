@@ -89,8 +89,11 @@ class VectorStore(Tools):
 async def vector_store(
     store: VectorDatabase | Callable[[...], Awaitable[VectorDatabase]],
     initial: List[Document] = None,
-    chunking_strategy: ChunkingStrategy = word_chunking()
+    chunking_strategy: ChunkingStrategy = None
 ) -> ToolDef:
+    if not chunking_strategy:
+        chunking_strategy = word_chunking()
+
     vector_database: VectorDatabase
 
     match store:

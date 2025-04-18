@@ -2,14 +2,14 @@ import atexit
 import asyncio
 import signal
 import sys
-import threading
-from typing import List, Any
+from datetime import datetime
+from typing import List, Any, TYPE_CHECKING
 
-try:
-    from liteagent.providers import Provider
-except ImportError:
-    # Define a placeholder for static type checking
-    class Provider: pass
+if TYPE_CHECKING:
+    pass
+else:
+    # Forward declaration just for type hints
+    Provider = Any
 
 _registered_providers: List[Any] = []
 _cleanup_running = False
@@ -34,6 +34,8 @@ def register_provider(func_or_provider=None):
     my_provider = Provider()
     register_provider(my_provider)
     """
+
+    start = datetime.now()
 
     def _register_instance(provider):
         if provider not in _registered_providers:
@@ -64,7 +66,7 @@ def register_provider(func_or_provider=None):
         wrapper.__doc__ = func_or_provider.__doc__
         wrapper.__annotations__ = func_or_provider.__annotations__
         wrapper.__module__ = func_or_provider.__module__
-        
+
         return wrapper
     
     def decorator(func):
@@ -89,7 +91,7 @@ def register_provider(func_or_provider=None):
             wrapper.__module__ = func.__module__
             
             return wrapper
-        
+
     return decorator
 
 def unregister_provider(provider) -> None:
@@ -117,29 +119,22 @@ def _run_async_cleanup():
     if not _registered_providers:
         return
         
-    # print(f"Running cleanup for {len(_registered_providers)} providers...")
-    
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        providers = list(_registered_providers)  # Make a copy to avoid modification during iteration
+        providers = list(_registered_providers)
         for provider in providers:
             try:
-                # print(f"Cleaning up provider: {provider.name if hasattr(provider, 'name') else provider}")
                 loop.run_until_complete(provider.destroy())
             except Exception as e:
                 pass
-                # print(f"Error during cleanup: {e}")
-        
+
         _registered_providers.clear()
         
         loop.close()
-        
-        # print("Cleanup complete")
     except Exception as e:
         pass
-        # print(f"Cleanup error: {e}")
 
 def _cleanup_handler() -> None:
     _run_async_cleanup()

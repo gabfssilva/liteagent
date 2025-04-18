@@ -1,6 +1,5 @@
 import json
-import os
-from typing import AsyncIterator, Type, List, Dict, Any, Optional
+from typing import AsyncIterator, Type, Any, Optional
 
 from azure.ai.inference.aio import ChatCompletionsClient
 
@@ -8,11 +7,9 @@ from azure.core.credentials import AzureKeyCredential
 
 import azure.ai.inference.models as azure
 
-from liteagent.internal import register_provider
 from liteagent import Tool
-from liteagent.providers import Provider
-from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage, ImageURL, \
-    ImageBase64, MessageContent
+from liteagent.provider import Provider
+from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage
 
 class AzureAI(Provider):
     name: str = "azure_ai"
