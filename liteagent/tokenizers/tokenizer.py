@@ -1,17 +1,16 @@
-from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
-import numpy as np
-import tiktoken
-from fastembed import TextEmbedding
-from sentence_transformers import SentenceTransformer
-from transformers import AutoTokenizer
+if TYPE_CHECKING:
+    import numpy as np
+
+from abc import ABC, abstractmethod
 
 
 class Tokenizer(ABC):
     @abstractmethod
-    async def encode(self, text: str) -> np.ndarray:
+    async def encode(self, text: str) -> 'np.ndarray':
         pass
 
     @abstractmethod
-    async def decode(self, tokens: np.ndarray) -> str:
+    async def decode(self, tokens: 'np.ndarray') -> str:
         pass

@@ -1,11 +1,13 @@
 import asyncio
 import os
+
 from atlassian import Confluence, Jira
 from pydantic.v1 import Field
 
 from liteagent import agent, chat
 from liteagent.providers import openai
 from liteagent.tools import confluence, jira
+
 
 @agent(
     tools=[
@@ -16,10 +18,13 @@ from liteagent.tools import confluence, jira
             cloud=True
         ))
     ],
-    provider=openai(model='gpt-4o-mini')
+    provider=openai(model='gpt-4.1-mini')
 )
-async def confluence_agent(prompt: str = Field(..., description="A extremally detailed prompt based on the user's intent")) -> str:
+async def confluence_agent(
+    prompt: str = Field(..., description="A extremally detailed prompt based on the user's intent")
+) -> str:
     """{prompt}"""
+
 
 @agent(
     tools=[
@@ -30,17 +35,20 @@ async def confluence_agent(prompt: str = Field(..., description="A extremally de
             cloud=True
         ))
     ],
-    provider=openai(model='gpt-4o-mini')
+    provider=openai(model='gpt-4.1-mini')
 )
-async def jira_agent(prompt: str = Field(..., description="A extremally detailed prompt based on the user's intent")) -> str:
+async def jira_agent(
+    prompt: str = Field(..., description="A extremally detailed prompt based on the user's intent")) -> str:
     """{prompt}"""
 
-@chat.terminal(initial_message="Atlassian Agent")
+
+@chat.terminal(logo="Atlassian Agent")
 @agent(
     provider=openai(model="gpt-4.1"),
     team=[jira_agent, confluence_agent]
 )
 async def atlassian_agent(): pass
+
 
 if __name__ == "__main__":
     asyncio.run(atlassian_agent())

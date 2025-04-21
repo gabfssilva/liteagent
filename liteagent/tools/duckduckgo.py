@@ -1,20 +1,26 @@
 from typing import Literal
 
-from duckduckgo_search import DDGS
-from pydantic import JsonValue
+from pydantic import Field
 
 from liteagent import tool
+from liteagent.internal import depends_on
 
 
 @tool(emoji='🔎')
+@depends_on({
+    "duckduckgo_search": "duckduckgo-search"
+})
 def duckduckgo(
     keywords: str,
     region: str | None,
     safesearch: Literal['on', 'moderate', 'off'],
     timelimit: str | None,
     backend: Literal['auto', 'html', 'lite'],
-    max_results: int | None,
-) -> JsonValue:
+    max_results: int | None = Field(...,
+                                    description="The maximum number of results to return. Defaults to 100. Recommended >= 50 and <= 250"),
+):
+    from duckduckgo_search import DDGS
+
     """ Use this tool for searching the internet. """
 
     return DDGS().text(
@@ -23,5 +29,5 @@ def duckduckgo(
         safesearch,
         timelimit,
         backend,
-        max_results or 20
+        max_results or 100
     )

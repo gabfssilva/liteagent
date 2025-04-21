@@ -1,7 +1,9 @@
 from typing import AsyncIterator, List
 
 from .agent import Agent
-from .message import Message, UserMessage, MessageContent, AssistantMessage
+from .logger import log
+from .message import Message, UserMessage, MessageContent, AssistantMessage, ToolMessage, ToolRequest
+
 
 class Session:
     agent: Agent
@@ -9,7 +11,8 @@ class Session:
 
     def __init__(self, agent: Agent):
         self.agent = agent
-        self.conversation = list(agent.initial_messages)
+        self.conversation = []
+        log.info("session_created", agent=agent.name)
 
     def _wrap_user_input(
         self,
@@ -35,41 +38,84 @@ class Session:
 
         return [to_message(c) for c in content]
 
+    def ordered_conversation(self) -> List[Message]:
+        reordered: List[Message] = []
+        tool_response_map = {}
+
+        for msg in self.conversation:
+            if isinstance(msg, ToolMessage):
+                tool_response_map[msg.id] = msg
+
+        skip_ids = set()
+
+        for msg in self.conversation:
+            if isinstance(msg, AssistantMessage) and isinstance(msg.content, ToolRequest):
+                reordered.append(msg)
+                tool_msg = tool_response_map.get(msg.content.id)
+                if tool_msg:
+                    reordered.append(tool_msg)
+                    skip_ids.add(tool_msg.id)
+            elif isinstance(msg, ToolMessage) and msg.id in skip_ids:
+                continue
+            else:
+                reordered.append(msg)
+
+        return reordered
+
     def __call__(
         self,
         *content: MessageContent | Message,
         **kwargs,
     ) -> AsyncIterator[Message]:
+        session_logger = log.bind(agent=self.agent.name, session_id=id(self))
+        session_logger.info("session_called")
+        
         async def stream_and_track():
-            messages = self.conversation + self._wrap_user_input(*content, **kwargs)
-            last_assistant_message = None
+            session_logger.debug("wrapping_user_input")
+            user_input = self._wrap_user_input(*content, **kwargs)
+            session_logger.debug("user_input_wrapped", message_count=len(user_input))
+            
+            ordered_conv = self.ordered_conversation()
+            session_logger.debug("conversation_ordered", message_count=len(ordered_conv))
+            
+            full_conversation = ordered_conv + user_input
+            session_logger.debug("full_conversation_prepared", message_count=len(full_conversation))
 
-            async for message in await self.agent(*messages, stream=True):
+            # Replace the print with structured logging
+            session_logger.debug("sending_to_agent", 
+                               conversation_size=len(full_conversation),
+                               user_messages=len([m for m in full_conversation if m.role == "user"]),
+                               assistant_messages=len([m for m in full_conversation if m.role == "assistant"]),
+                               tool_messages=len([m for m in full_conversation if m.role == "tool"]))
+
+            session_logger.debug("streaming_from_agent_started")
+            async for message in await self.agent(*full_conversation, stream=True):
                 if message in self.conversation:
+                    session_logger.debug("skipping_duplicate_message", role=message.role)
                     continue
 
                 if message.role == "system":
+                    session_logger.debug("skipping_system_message")
                     continue
 
+                session_logger.debug("message_received", 
+                                   role=message.role, 
+                                   content_type=type(message.content).__name__)
+                
                 yield message
-
-                if message.role == "assistant" and isinstance(message.content, str):
-                    last_assistant_message = last_assistant_message + message.content if last_assistant_message else message.content
-                    continue
-
-                if last_assistant_message and (message.role != "assistant" or not isinstance(message.content, str)):
-                    self.conversation.append(AssistantMessage(content=last_assistant_message))
-                    last_assistant_message = None
-
                 self.conversation.append(message)
+                session_logger.debug("message_added_to_conversation", 
+                                   conversation_size=len(self.conversation))
 
-            if last_assistant_message:
-                self.conversation.append(AssistantMessage(content=last_assistant_message))
+            session_logger.debug("streaming_from_agent_completed")
 
         return stream_and_track()
 
     def reset(self):
-        self.conversation = list(self.agent.initial_messages)
+        session_logger = log.bind(agent=self.agent.name, session_id=id(self))
+        session_logger.info("session_reset", previous_conversation_size=len(self.conversation))
+        self.conversation = []
+
 
 def session(agent: Agent) -> Session:
     return Session(agent)

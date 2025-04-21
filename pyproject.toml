@@ -1,55 +1,286 @@
 [project]
-name = "liteagents"
+name = "liteagent"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "aiocache>=0.12.3",
-    "aiosmtpd>=1.4.6",
-    "anthropic>=0.47.1",
-    "art>=6.5",
-    "asyncpraw>=7.2.0",
-    "atlassian-python-api>=4.0.3",
-    "azure-ai-inference>=1.0.0b9",
-    "chromadb>=0.6.3",
-    "crawl4ai>=0.4.248",
-    "datasets>=3.2.0",
-    "docker>=7.1.0",
-    "duckduckgo-search>=7.3.0",
-    "fastembed>=0.5.1",
-    "feedparser>=6.0.11",
-    "getchlib>=1.1.2",
-    "google-genai>=1.0.0",
-    "googlesearch-python>=1.2.5",
-    "huggingface-hub>=0.28.0",
-    "import-tracker>=3.2.1",
-    "importtime>=1.0.3.2",
-    "llama-cpp-python>=0.3.6",
-    "markdownify>=0.14.1",
-    "mlx-lm>=0.21.1",
-    "ollama>=0.4.6",
-    "openai>=1.59.6",
-    "openmeteopy",
-    "pgvector>=0.3.6",
-    "pyalex>=0.15.1",
+    "asyncstdlib>=3.13.1",
+    "httpx>=0.24.0",
+    "joblib>=1.4.2",
+    "py-spy>=0.4.0",
     "pydantic>=2.10.5",
-    "pymupdf4llm>=0.0.17",
-    "pyyaml>=6.0.2",
-    "qdrant-client>=1.13.2",
-    "rich>=13.9.4",
-    "sentence-transformers>=3.4.1",
-    "sqlalchemy>=2.0.38",
     "structlog>=25.1.0",
-    "textual>=3.1.0",
-    "textual-dev>=1.7.0",
-    "tiktoken>=0.9.0",
-    "timm>=1.0.14",
-    "torch>=2.6.0",
-    "torchvision>=0.21.0",
-    "transformers>=4.48.2",
-    "yfinance>=0.2.54",
+    "yappi>=1.6.10",
 ]
+
+[tool.uv]
+package = true
 
 [tool.uv.sources]
 openmeteopy = { git = "https://github.com/m0rp43us/openmeteopy" }
+
+[dependency-groups]
+# Core utilities
+core = [
+    "aiocache>=0.12.3",
+    "rich>=13.9.4",
+    "pyyaml>=6.0.2",
+]
+
+# LLM Providers
+anthropic = ["anthropic>=0.47.1"]
+openai = ["openai>=1.59.6", "tiktoken>=0.9.0"]
+gemini = ["google-genai>=1.0.0"]
+ollama = ["ollama>=0.4.6"]
+azure = ["azure-ai-inference>=1.0.0b9"]
+llama = ["llama-cpp-python>=0.3.6", "huggingface-hub>=0.28.0"]
+mlx = ["mlx-lm>=0.21.1"]
+
+# Providers group (flattened)
+providers = [
+    "anthropic>=0.47.1",
+    "openai>=1.59.6", "tiktoken>=0.9.0",
+    "google-genai>=1.0.0",
+    "ollama>=0.4.6",
+    "azure-ai-inference>=1.0.0b9",
+    "llama-cpp-python>=0.3.6", "huggingface-hub>=0.28.0",
+    "mlx-lm>=0.21.1",
+]
+
+# Individual vector databases
+chromadb = ["chromadb>=0.6.3"]
+pgvector = ["pgvector>=0.3.6", "sqlalchemy>=2.0.38"]
+qdrant = ["qdrant-client>=1.13.2"]
+
+# All vector databases (flattened)
+vectordb = [
+    "chromadb>=0.6.3",
+    "pgvector>=0.3.6", "sqlalchemy>=2.0.38",
+    "qdrant-client>=1.13.2",
+]
+
+# Individual embedding models
+fastembed = ["fastembed>=0.5.1"]
+sentence_transformers = ["sentence-transformers>=3.4.1"]
+huggingface = ["transformers>=4.48.2", "datasets>=3.2.0"]
+
+# All embedding options (flattened)
+embedding = [
+    "fastembed>=0.5.1",
+    "sentence-transformers>=3.4.1",
+    "transformers>=4.48.2", "datasets>=3.2.0",
+]
+
+# Torch dependencies
+torch = [
+    "torch>=2.6.0",
+    "torchvision>=0.21.0",
+    "timm>=1.0.14",
+]
+
+# Vision capabilities (flattened)
+vision = [
+    "torch>=2.6.0",
+    "torchvision>=0.21.0",
+    "timm>=1.0.14",
+]
+
+html_parser = ["markdownify>=0.14.1"]
+crawl4ai = ["crawl4ai==v0.5.0.post8"]
+duckduckgo = ["duckduckgo-search>=7.3.0"]
+googlesearch = ["googlesearch-python>=1.2.5"]
+feedparser = ["feedparser>=6.0.11"]
+
+web = [
+    "markdownify>=0.14.1",
+    "crawl4ai>=0.4.248",
+    "duckduckgo-search>=7.3.0",
+    "googlesearch-python>=1.2.5",
+    "feedparser>=6.0.11",
+]
+
+reddit = ["asyncpraw>=7.2.0"]
+pyalex = ["pyalex>=0.15.1"]
+yfinance = ["yfinance>=0.2.54"]
+openmeteo = ["openmeteopy"]
+
+services = [
+    "asyncpraw>=7.2.0",
+    "pyalex>=0.15.1",
+    "yfinance>=0.2.54",
+    "openmeteopy",
+]
+
+documents = [
+    "pymupdf4llm>=0.0.17",
+]
+
+email = [
+    "aiosmtpd>=1.4.6",
+]
+
+ui = [
+    "art>=6.5",
+    "getchlib>=1.1.2",
+    "textual>=3.1.0",
+    "textual-dev>=1.7.0",
+]
+
+dev = [
+    "import-tracker>=3.2.1",
+    "importtime>=1.0.3.2",
+    "docker>=7.1.0",
+]
+
+rag_minimal = [
+    "fastembed>=0.5.1",
+    "chromadb>=0.6.3",
+    "pymupdf4llm>=0.0.17",
+]
+
+rag_postgres = [
+    "sentence-transformers>=3.4.1",
+    "pgvector>=0.3.6", "sqlalchemy>=2.0.38",
+    "pymupdf4llm>=0.0.17",
+]
+
+rag_qdrant = [
+    "sentence-transformers>=3.4.1",
+    "qdrant-client>=1.13.2",
+    "pymupdf4llm>=0.0.17",
+]
+
+rag_huggingface = [
+    "transformers>=4.48.2", "datasets>=3.2.0",
+    "chromadb>=0.6.3",
+    "pymupdf4llm>=0.0.17",
+]
+
+rag = [
+    "fastembed>=0.5.1",
+    "sentence-transformers>=3.4.1",
+    "transformers>=4.48.2", "datasets>=3.2.0",
+    "chromadb>=0.6.3",
+    "pgvector>=0.3.6", "sqlalchemy>=2.0.38",
+    "qdrant-client>=1.13.2",
+    "pymupdf4llm>=0.0.17",
+]
+
+chat = [
+    "aiocache>=0.12.3",
+    "rich>=13.9.4",
+    "pyyaml>=6.0.2",
+    "art>=6.5",
+    "getchlib>=1.1.2",
+    "textual>=3.1.0",
+    "textual-dev>=1.7.0",
+]
+
+basic = [
+    "aiocache>=0.12.3",
+    "rich>=13.9.4",
+    "pyyaml>=6.0.2",
+    "openai>=1.59.6",
+    "tiktoken>=0.9.0",
+]
+
+search = [
+    "duckduckgo-search>=7.3.0",
+    "googlesearch-python>=1.2.5",
+]
+
+full = [
+    # core
+    "aiocache>=0.12.3",
+    "rich>=13.9.4",
+    "pyyaml>=6.0.2",
+    # providers
+    "anthropic>=0.47.1",
+    "openai>=1.59.6",
+    "tiktoken>=0.9.0",
+    "google-genai>=1.0.0",
+    "ollama>=0.4.6",
+    "azure-ai-inference>=1.0.0b9",
+    "llama-cpp-python>=0.3.6",
+    "huggingface-hub>=0.28.0",
+    "mlx-lm>=0.21.1",
+    # rag
+    "fastembed>=0.5.1",
+    "sentence-transformers>=3.4.1",
+    "transformers>=4.48.2",
+    "datasets>=3.2.0",
+    "chromadb>=0.6.3",
+    "pgvector>=0.3.6",
+    "sqlalchemy>=2.0.38",
+    "qdrant-client>=1.13.2",
+    "pymupdf4llm>=0.0.17",
+    # web
+    "markdownify>=0.14.1",
+    "crawl4ai>=0.4.248",
+    "duckduckgo-search>=7.3.0",
+    "googlesearch-python>=1.2.5",
+    "feedparser>=6.0.11",
+    # services
+    "asyncpraw>=7.2.0",
+    "pyalex>=0.15.1",
+    "yfinance>=0.2.54",
+    "openmeteopy",
+    # email
+    "aiosmtpd>=1.4.6",
+    # ui
+    "art>=6.5",
+    "getchlib>=1.1.2",
+    "textual>=3.1.0",
+    "textual-dev>=1.7.0",
+    "atlassian-python-api>=4.0.3",
+    "joblib>=1.4.2",
+]
+
+atlassian = [
+    "atlassian-python-api>=4.0.3",
+]
+
+all = [
+    "aiocache>=0.12.3",
+    "rich>=13.9.4",
+    "pyyaml>=6.0.2",
+    "anthropic>=0.47.1",
+    "openai>=1.59.6",
+    "tiktoken>=0.9.0",
+    "google-genai>=1.0.0",
+    "ollama>=0.4.6",
+    "azure-ai-inference>=1.0.0b9",
+    "llama-cpp-python>=0.3.6",
+    "huggingface-hub>=0.28.0",
+    "mlx-lm>=0.21.1",
+    "fastembed>=0.5.1",
+    "sentence-transformers>=3.4.1",
+    "transformers>=4.48.2",
+    "datasets>=3.2.0",
+    "chromadb>=0.6.3",
+    "pgvector>=0.3.6",
+    "sqlalchemy>=2.0.38",
+    "qdrant-client>=1.13.2",
+    "pymupdf4llm>=0.0.17",
+    "markdownify>=0.14.1",
+    "crawl4ai>=0.4.248",
+    "duckduckgo-search>=7.3.0",
+    "googlesearch-python>=1.2.5",
+    "feedparser>=6.0.11",
+    "asyncpraw>=7.2.0",
+    "pyalex>=0.15.1",
+    "yfinance>=0.2.54",
+    "openmeteopy",
+    "aiosmtpd>=1.4.6",
+    "art>=6.5",
+    "getchlib>=1.1.2",
+    "textual>=3.1.0",
+    "textual-dev>=1.7.0",
+    # dev
+    "import-tracker>=3.2.1",
+    "importtime>=1.0.3.2",
+    "docker>=7.1.0",
+    "atlassian-python-api>=4.0.3",
+    "joblib>=1.4.2",
+]

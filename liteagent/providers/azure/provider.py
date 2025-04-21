@@ -1,15 +1,17 @@
 import json
+import os
+from functools import partial
 from typing import AsyncIterator, Type, Any, Optional
 
+import azure.ai.inference.models as azure
 from azure.ai.inference.aio import ChatCompletionsClient
-
 from azure.core.credentials import AzureKeyCredential
 
-import azure.ai.inference.models as azure
-
 from liteagent import Tool
-from liteagent.provider import Provider
+from liteagent.internal.cleanup import register_provider
 from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage
+from liteagent.provider import Provider
+
 
 class AzureAI(Provider):
     name: str = "azure_ai"
@@ -52,16 +54,17 @@ class AzureAI(Provider):
             )
 
         # Stream response
+        mapped_messages = [await self._map_message_to_azure(msg) for msg in messages]
         completion_stream = await self.client.complete(
             model=self.model,
-            messages=[self._map_message_to_azure(msg) for msg in messages],
+            messages=mapped_messages,
             tools=azure_tools,
             response_format=response_format,
             stream=True,
             **self.args
         )
 
-        on_going_function = { "name": None,  "arguments": "" }
+        on_going_function = {"name": None, "arguments": ""}
         on_going_response = "" if respond_as else None
 
         async for response_chunk in completion_stream:
@@ -108,7 +111,7 @@ class AzureAI(Provider):
                             "arguments": ""
                         }
 
-    def _map_message_to_azure(self, message: Message):
+    async def _map_message_to_azure(self, message: Message):
         match message:
             case UserMessage(content=content):
                 return azure.UserMessage(
@@ -133,10 +136,10 @@ class AzureAI(Provider):
                     content=self._convert_content(content)
                 )
 
-            case ToolMessage(id=id, content=content):
+            case ToolMessage(id=id, content=content) as message:
                 return azure.ToolMessage(
                     tool_call_id=id,
-                    content=self._convert_content(content)
+                    content=await message.content_as_string()
                 )
 
             case SystemMessage(content=content):
@@ -182,3 +185,22 @@ class AzureAI(Provider):
     async def destroy(self):
         if self.client:
             await self.client.close()
+
+
+@register_provider
+def azureai(
+    model: str = 'gpt-4o-mini',
+    base_url: str = 'https://models.inference.ai.azure.com',
+    api_key: str = None,
+    **kwargs
+) -> Provider:
+    return AzureAI(
+        model=model,
+        base_url=base_url,
+        api_key=api_key,
+        **kwargs
+    )
+
+
+# Shorthand for GitHub Copilot
+github = partial(azureai, api_key=os.getenv('GITHUB_TOKEN'))

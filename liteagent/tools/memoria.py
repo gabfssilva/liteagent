@@ -2,8 +2,6 @@ import asyncio
 import json
 from abc import ABC, abstractmethod
 
-import numpy as np
-from fastembed import TextEmbedding
 from pydantic import Field
 
 from liteagent import tool, Tools
@@ -29,11 +27,15 @@ class Storage(ABC):
 
 class FileStorage(Storage):
     def __init__(self, file_path: str, similarity_threshold: float = 0.85):
+        from fastembed import TextEmbedding
+
         self.file_path = file_path
         self.similarity_threshold = similarity_threshold
         self.embedder = TextEmbedding()
 
     async def store(self, content: str) -> str:
+        import numpy as np
+
         memories = await self.retrieve()
 
         new_embedding = np.array(list(self.embedder.embed([content]))[0])

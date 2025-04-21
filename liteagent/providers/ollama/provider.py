@@ -1,4 +1,3 @@
-import json
 from abc import ABC
 from typing import Type, AsyncIterator, Callable
 
@@ -6,10 +5,11 @@ import httpx
 from ollama import AsyncClient, ChatResponse
 from pydantic import BaseModel, TypeAdapter
 
-from liteagent import Tool, ToolResponse
-from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, ImageBase64, ImageURL, \
-    ImageContent
+from liteagent import Tool
+from liteagent.internal.cleanup import register_provider
+from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, ImageBase64, ImageURL
 from liteagent.provider import Provider
+
 
 class Ollama(Provider, ABC):
     name: str = "ollama"
@@ -41,7 +41,7 @@ class Ollama(Provider, ABC):
         await self._download_if_required()
 
         tool_definitions = list(map(lambda tool: tool.definition, tools)) if len(tools) > 0 else None
-        parsed_messages =  [await self.to_ollama_format(message) for message in messages]
+        parsed_messages = [await self.to_ollama_format(message) for message in messages]
 
         response_format = None if respond_as is None else TypeAdapter(respond_as).json_schema()
 
@@ -188,35 +188,11 @@ class Ollama(Provider, ABC):
                     "content": content,
                 }
 
-            case ToolMessage(id=id, content=ToolResponse() as content):
+            case ToolMessage(id=id, content=content) as message:
                 return {
                     "tool_call_id": id,
                     "role": "tool",
-                    "content": json.dumps(content.__tool_response__()),
-                    "type": "function"
-                }
-
-            case ToolMessage(id=id, content=BaseModel() as content):
-                return {
-                    "tool_call_id": id,
-                    "role": "tool",
-                    "content": content.model_dump_json(),
-                    "type": "function"
-                }
-
-            case ToolMessage(id=id, content=dict() | list() as content):
-                return {
-                    "tool_call_id": id,
-                    "role": "tool",
-                    "content": json.dumps(content),
-                    "type": "function"
-                }
-
-            case ToolMessage(id=id, content=str(content)):
-                return {
-                    "tool_call_id": id,
-                    "role": "tool",
-                    "content": content,
+                    "content": await message.content_as_string(),
                     "type": "function"
                 }
 
@@ -228,3 +204,11 @@ class Ollama(Provider, ABC):
 
             case _:
                 raise ValueError(f"Invalid message type: {type(message)}")
+
+
+@register_provider
+def ollama(
+    model: str = 'llama3.2',
+    automatic_download: bool = True
+) -> Provider:
+    return Ollama(model=model, automatic_download=automatic_download)

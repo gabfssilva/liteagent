@@ -1,4 +1,5 @@
-from typing import Dict, List, Optional, Union
+from typing import Dict
+
 import httpx
 from pydantic import Field
 
@@ -7,9 +8,9 @@ from liteagent import tool, Tools
 
 class Scopus(Tools):
     """Tools for interacting with the Elsevier Scopus API to search and retrieve academic papers."""
-    
+
     _client: httpx.AsyncClient
-    
+
     def __init__(
         self,
         api_key: str,
@@ -29,7 +30,7 @@ class Scopus(Tools):
                 "Accept": "application/json"
             }
         )
-    
+
     @tool(emoji='🔍')
     async def search(
         self,
@@ -54,12 +55,12 @@ class Scopus(Tools):
             "count": min(count, 200),  # API limit
             "sort": sort
         }
-        
+
         url = "/search/scopus"
         response = await self._client.get(url, params=params)
         response.raise_for_status()
         return response.json()
-    
+
     @tool(emoji='📄')
     async def abstract(
         self,
@@ -73,12 +74,12 @@ class Scopus(Tools):
         keywords, funding, and citation information.
         """
         params = {"view": view}
-        
+
         url = f"/abstract/scopus_id/{scopus_id}"
         response = await self._client.get(url, params=params)
         response.raise_for_status()
         return response.json()
-    
+
     @tool(emoji='📚')
     async def citations(
         self,
@@ -95,12 +96,12 @@ class Scopus(Tools):
             "start": start,
             "count": min(count, 200)  # API limit
         }
-        
+
         url = f"/abstract/citations/{scopus_id}"
         response = await self._client.get(url, params=params)
         response.raise_for_status()
         return response.json()
-    
+
     @tool(emoji='👤')
     async def author(
         self,
@@ -114,12 +115,12 @@ class Scopus(Tools):
         publication history, h-index, and citation metrics.
         """
         params = {"view": view}
-        
+
         url = f"/author/author_id/{author_id}"
         response = await self._client.get(url, params=params)
         response.raise_for_status()
         return response.json()
-    
+
     async def close(self):
         """Close the HTTP client session."""
         await self._client.aclose()

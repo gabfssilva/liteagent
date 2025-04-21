@@ -1,4 +1,5 @@
-from typing import Dict, List, Optional, Union
+from typing import Dict
+
 import httpx
 from pydantic import Field
 
@@ -7,9 +8,9 @@ from liteagent import tool, Tools
 
 class WebOfScience(Tools):
     """Tools for interacting with the Clarivate Web of Science API to search and retrieve academic papers."""
-    
+
     _client: httpx.AsyncClient
-    
+
     def __init__(
         self,
         api_key: str,
@@ -29,7 +30,7 @@ class WebOfScience(Tools):
                 "Accept": "application/json"
             }
         )
-    
+
     @tool(emoji='🔍')
     async def search(
         self,
@@ -37,7 +38,8 @@ class WebOfScience(Tools):
         database: str = Field("WOS", description="Database ID: WOS, BCI, DRCI, etc."),
         count: int = Field(25, description="Maximum number of results to return (max 100)"),
         first_record: int = Field(1, description="First record to return, 1-based indexing"),
-        sort_field: str = Field("RS", description="Field to sort by: RS (relevance), TC (citations), PY (publication year)")
+        sort_field: str = Field("RS",
+                                description="Field to sort by: RS (relevance), TC (citations), PY (publication year)")
     ) -> Dict:
         """
         Search for academic papers in Web of Science using advanced query syntax.
@@ -56,17 +58,17 @@ class WebOfScience(Tools):
             "firstRecord": first_record,
             "sortField": sort_field
         }
-        
+
         url = "/query"
         response = await self._client.get(url, params=params)
         response.raise_for_status()
         return response.json()
-    
+
     @tool(emoji='📄')
     async def retrieve(
         self,
         ut: str = Field(..., description="Unique identifier (UT) for the Web of Science record"),
-        unique_id_type: str = Field("UT", description="ID type: UT (WoS unique ID), DOI, PMID, etc.") 
+        unique_id_type: str = Field("UT", description="ID type: UT (WoS unique ID), DOI, PMID, etc.")
     ) -> Dict:
         """
         Retrieve detailed information for a specific document by its unique identifier.
@@ -78,12 +80,12 @@ class WebOfScience(Tools):
             "uniqueId": ut,
             "uniqueIdType": unique_id_type
         }
-        
+
         url = "/retrieved"
         response = await self._client.get(url, params=params)
         response.raise_for_status()
         return response.json()
-    
+
     @tool(emoji='📊')
     async def cited_references(
         self,
@@ -101,12 +103,12 @@ class WebOfScience(Tools):
             "count": min(count, 100),  # API limit
             "firstRecord": first_record
         }
-        
+
         url = "/citedReferences"
         response = await self._client.get(url, params=params)
         response.raise_for_status()
         return response.json()
-    
+
     @tool(emoji='🔬')
     async def citing_articles(
         self,
@@ -126,12 +128,12 @@ class WebOfScience(Tools):
             "firstRecord": first_record,
             "sortField": sort_field
         }
-        
+
         url = "/citingArticles"
         response = await self._client.get(url, params=params)
         response.raise_for_status()
         return response.json()
-    
+
     @tool(emoji='🌐')
     async def related_records(
         self,
@@ -149,12 +151,12 @@ class WebOfScience(Tools):
             "count": min(count, 100),  # API limit
             "firstRecord": first_record
         }
-        
+
         url = "/relatedRecords"
         response = await self._client.get(url, params=params)
         response.raise_for_status()
         return response.json()
-    
+
     async def close(self):
         """Close the HTTP client session."""
         await self._client.aclose()

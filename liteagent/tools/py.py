@@ -1,5 +1,4 @@
 from pydantic import Field, BaseModel, JsonValue
-from rich.pretty import Pretty
 
 from liteagent import tool
 
@@ -9,6 +8,8 @@ class PythonScriptResult(BaseModel):
     result: JsonValue = Field(..., description="The result of the script")
 
     def __rich__(self):
+        from rich.pretty import Pretty
+
         return Pretty(self.result)
 
     def __tool_response__(self) -> JsonValue:

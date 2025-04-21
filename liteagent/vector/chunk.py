@@ -1,9 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-import numpy as np
-from transformers import AutoTokenizer
-
 from liteagent.tokenizers import Tokenizer, transformers_tokenizer
 
 
@@ -35,6 +32,8 @@ class TokenChunking(ChunkingStrategy):
         self.overlap = overlap
 
     async def chunk(self, text: str) -> List[str]:
+        import numpy as np
+
         tokens = await self.tokenizer.encode(text)
         tokens = tokens.flatten().tolist()
 

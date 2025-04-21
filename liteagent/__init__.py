@@ -1,8 +1,8 @@
 from .prompts import TOOL_AGENT_PROMPT
 from .tool import Tool, Tools, ToolDef, ToolResponse
-from .message import Message, SystemMessage, AssistantMessage, UserMessage, ToolMessage, ToolRequest, ImageURL, ImageBase64
+from .message import Message, SystemMessage, AssistantMessage, UserMessage, ToolMessage, ToolRequest, ImageURL, \
+    ImageBase64
 from .provider import Provider
-from . import auditors
 from .agent import Agent
 from .decorators import agent, tool, team
 from . import providers
@@ -18,7 +18,6 @@ __all__ = [
     "ToolDef",
     "tool",
     "TOOL_AGENT_PROMPT",
-    "auditors",
     "Message",
     "SystemMessage",
     "AssistantMessage",

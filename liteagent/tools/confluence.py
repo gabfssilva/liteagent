@@ -1,13 +1,16 @@
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from atlassian import Confluence
 
 from liteagent import Tools, tool, ToolDef
+from liteagent.internal import depends_on
 
-from atlassian import Confluence
 
 class ConfluenceTools(Tools):
-    client: Confluence
+    client: 'Confluence'
 
-    def __init__(self, client: Confluence):
+    def __init__(self, client: 'Confluence'):
         self.client = client
 
     @tool(emoji="🔍")
@@ -15,12 +18,13 @@ class ConfluenceTools(Tools):
         """
         Search Confluence pages using a CQL query.
         """
-        response = self.client.cql(cql, expand='content.history,content.history.contributors,content.history.contributors.publishers.users,content.version,content.body.view,content.metadata,content.metadata.currentuser,content.metadata.simple')
+        response = self.client.cql(cql,
+                                   expand='content.history,content.history.contributors,content.history.contributors.publishers.users,content.version,content.body.view,content.metadata,content.metadata.currentuser,content.metadata.simple')
         results = response['results']
 
         import markdownify
 
-        return [ {
+        return [{
             "id": result["content"]["id"],
             "type": result["content"]["type"],
             "status": result["content"]["status"],
@@ -38,13 +42,13 @@ class ConfluenceTools(Tools):
                     "accountStatus": result["content"]["version"]["by"]['accountStatus']
                 },
             },
-            "authors": [ {
+            "authors": [{
                 "accountId": user['accountId'],
                 "name": user['displayName'],
                 "email": user['email'],
                 "accountStatus": user['accountStatus']
-            } for user in result["content"]["history"]["contributors"]['publishers']["users"] ]
-        } for result in results ]
+            } for user in result["content"]["history"]["contributors"]['publishers']["users"]]
+        } for result in results]
 
     @tool(emoji="🔍")
     def get_page_by_id(self, page_id: str) -> dict:
@@ -77,7 +81,8 @@ class ConfluenceTools(Tools):
         current_version = page["version"]["number"]
 
         if version != current_version:
-            return { "message": "The provided version does not match the current version of the page. Fetch the page again and re-do the operation." }
+            return {
+                "message": "The provided version does not match the current version of the page. Fetch the page again and re-do the operation."}
 
         return self.client.update_page(page_id, page["title"], updated_body, representation="storage")
 
@@ -91,7 +96,8 @@ class ConfluenceTools(Tools):
         current_version = page["version"]["number"]
 
         if version != current_version:
-            return { "message": "The provided version does not match the current version of the page. Fetch the page again and re-do the operation." }
+            return {
+                "message": "The provided version does not match the current version of the page. Fetch the page again and re-do the operation."}
 
         return self.client.update_existing_page(page_id, title, page["body"]["storage"]["value"])
 
@@ -105,7 +111,8 @@ class ConfluenceTools(Tools):
         current_version = page["version"]["number"]
 
         if version != current_version:
-            return { "message": "The provided version does not match the current version of the page. Fetch the page again and re-do the operation." }
+            return {
+                "message": "The provided version does not match the current version of the page. Fetch the page again and re-do the operation."}
 
         existing_body = page["body"]["storage"]["value"]
         updated_body = existing_body.replace(old, new)
@@ -127,5 +134,8 @@ class ConfluenceTools(Tools):
         return self.client.get(f"/rest/api/user?accountId={account_id}")
 
 
-def confluence(client: Confluence) -> ToolDef:
+@depends_on({
+    "atlassian": "atlassian-python-api"
+})
+def confluence(client: 'Confluence') -> ToolDef:
     return ConfluenceTools(client=client)

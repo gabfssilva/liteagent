@@ -1,25 +1,28 @@
-import httpx
 import functools
 import inspect
-import xml.etree.ElementTree as ET
-import feedparser
-from typing import Literal, Any, Dict
+from typing import Literal
+
+import httpx
+
 
 def http(
-    url: str, 
-    method: str = "GET", 
-    headers: dict = None, 
-    params: dict = None, 
-    body: str = None, 
+    url: str,
+    method: str = "GET",
+    headers: dict = None,
+    params: dict = None,
+    body: str = None,
     accept: Literal["json", "xml", "rss", "text", "binary"] = "json"
 ):
     def decorator(func):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
+            import xml.etree.ElementTree as ET
+            import feedparser
+            
             sig = inspect.signature(func)
             bound_args = sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
-            
+
             # Add self attributes to format context if available
             format_context = dict(bound_args.arguments)
             if args and hasattr(args[0], "__dict__"):
@@ -42,7 +45,7 @@ def http(
                     json=formatted_body if method in ["POST", "PUT", "PATCH"] else None
                 )
                 response.raise_for_status()
-                
+
                 if accept == "json":
                     return response.json()
                 elif accept == "xml":
@@ -55,4 +58,5 @@ def http(
                     return response.content
 
         return wrapper
+
     return decorator

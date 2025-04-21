@@ -3,23 +3,27 @@ from typing import Any
 
 from pydantic import create_model, Field
 
+from .agent import Agent
 from .tool import Tool
 
-class AgentDispatch(Tool):
-    def __init__(self, agent):
+
+class AgentDispatcher(Tool):
+    def __init__(self, agent: Agent):
         self.agent = agent
+
         input_model = self._create_input_model()
 
         super().__init__(
-            name=f"{agent.name.replace(' ', '_').lower()}_redirection",
-            description=f"Dispatch to the {agent.name} agent: {agent.description or ''}",
+            name=f"{self.agent.name.replace(' ', '_').lower()}_redirection",
+            description=f"Dispatch to the {self.agent.name} agent: {self.agent.description or ''}",
             input=input_model,
             handler=self._dispatch,
             emoji='🤖'
         )
 
     async def _dispatch(self, *args, **kwargs):
-        return await self.agent(*args, **kwargs)
+        args = filter(lambda arg: arg is not self, args)
+        return await self.agent(*list(args), stream=True, **kwargs)
 
     def _create_input_model(self):
         if not self.agent.signature:

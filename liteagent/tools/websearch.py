@@ -1,10 +1,11 @@
 from pydantic import Field
-from googlesearch import search
 
 from liteagent import tool
+from liteagent.internal import depends_on
 
 
 @tool(emoji='🔎')
+@depends_on({"googlesearch": "googlesearch"})
 def google(
     query: str = Field(..., description="The query for Google Web Search"),
     results: int = Field(10, description="The maxium result number to be returned. Defaults to 20."),
@@ -26,6 +27,7 @@ def google(
     )
 ) -> list[dict]:
     """ Use this tool for Google Searching. """
+    from googlesearch import search
 
     return list(
         map(lambda r: dict(

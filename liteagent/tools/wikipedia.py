@@ -1,12 +1,12 @@
+import asyncio
+
 import httpx
-from bs4 import BeautifulSoup
-from markdownify import markdownify as md
 from pydantic import Field
 
 from liteagent import tool
 
 
-@tool(emoji='🔎')
+@tool(name="wikipedia_search", emoji='🔎')
 async def search(
     query: str = Field(..., description="The search term."),
     limit: int = Field(..., description="Number of results to fetch.")
@@ -27,9 +27,11 @@ async def search(
         ), pages))
 
 
-@tool(emoji='📄')
+@tool(name="wikipedia_get_complete_article", emoji='📄')
 async def get_complete_article(url: str = Field(..., description="The URL of the page")):
     """ Fetches only the content body of a Wikipedia article as Markdown. """
+    from bs4 import BeautifulSoup
+    from markdownify import markdownify as md
 
     if not url.startswith("https://en.wikipedia.org/wiki/"):
         raise Exception("URL isn't from a Wikipedia page")
@@ -37,14 +39,14 @@ async def get_complete_article(url: str = Field(..., description="The URL of the
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
         response.raise_for_status()
-        html_content = response.text
 
-        soup = BeautifulSoup(html_content, 'html.parser')
+        def find_content(html_content: str):
+            soup = BeautifulSoup(html_content, 'html.parser')
+            return soup.find('div', id='bodyContent')
 
-        content_div = soup.find('div', id='bodyContent')
+        content_div = await asyncio.to_thread(find_content, response.text)
 
         if not content_div:
             raise Exception("Failed to locate the content body in the article")
 
-        markdown_content = md(str(content_div), heading_style="ATX")
-        return markdown_content
+        return await asyncio.to_thread(md, str(content_div), **dict(heading_style="ATX"))

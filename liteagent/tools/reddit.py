@@ -1,7 +1,7 @@
-import asyncpraw
 from typing import List, Union
 
 from liteagent import tool, Tools
+from liteagent.internal import depends_on
 
 
 class Reddit(Tools):
@@ -24,6 +24,8 @@ class Reddit(Tools):
         """Get or create AsyncPRAW Reddit instance."""
         if not self.reddit_kwargs:
             return None
+
+        import asyncpraw
 
         if not self.reddit:
             self.reddit = asyncpraw.Reddit(**self.reddit_kwargs)
@@ -193,6 +195,9 @@ class Reddit(Tools):
             return [{"error": str(e)}]
 
 
+@depends_on({
+    "asyncpraw": "asyncpraw",
+})
 def reddit(
     client_id: Union[str, None] = None,
     client_secret: Union[str, None] = None,

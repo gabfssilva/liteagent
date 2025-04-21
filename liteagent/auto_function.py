@@ -2,13 +2,14 @@ import inspect
 import asyncio
 from typing import TypeVar, Callable
 
-from aiocache import cached, Cache
 from pydantic import BaseModel, Field
 
 from liteagent import Provider, agent
+from liteagent.internal import depends_on
 
 T = TypeVar("T")
 R = TypeVar("R")
+
 
 class FunctionDefinition(BaseModel):
     implemented_function: str = Field(
@@ -16,13 +17,19 @@ class FunctionDefinition(BaseModel):
         description="The implementation of the function in Python."
     )
 
+
 def custom_key_builder(func, *args, **kwargs) -> str:
     # Sort kwargs so that the key is deterministic.
     sorted_kwargs = tuple(sorted(kwargs.items()))
     return f"{func.__module__}:{func.__name__}:{args}:{sorted_kwargs}"
 
+
+@depends_on({"aiocache": "aiocache"})
 def auto_function(provider: Provider, max_retries: int = 5) -> Callable[[T], R]:
     # Use our custom key_builder so we know how the key is generated.
+
+    from aiocache import cached, Cache
+
     @cached(cache=Cache.MEMORY, key_builder=custom_key_builder)
     @agent(
         provider=provider,

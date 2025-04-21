@@ -1,20 +1,23 @@
-from .oai import OpenAICompatible
-from .ollama_provider import Ollama
-from .claude_provider import Claude
-from .azure_ai import AzureAI
-from .providers import openai, openrouter, deepseek, ollama, gemini, claude, github, azureai
+from liteagent.providers.providers import (
+    openai_compatible,
+    claude,
+    gemini,
+    ollama,
+    azureai,
+    openai,
+    openrouter,
+    deepseek,
+    github
+)
 
 __all__ = [
-    "OpenAICompatible",
-    "Ollama",
-    "Claude",
-    "AzureAI",
     "openai",
+    "openai_compatible",
     "openrouter",
     "deepseek",
-    "ollama",
-    "gemini",
     "claude",
+    "gemini",
+    "azureai",
     "github",
-    "azureai"
+    "ollama",
 ]

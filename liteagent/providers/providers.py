@@ -1,46 +1,69 @@
 import os
 from functools import partial
 
-from google import genai
-from openai import AsyncOpenAI
-from anthropic import AsyncAnthropic
-
 from liteagent import Provider
-from liteagent.providers import OpenAICompatible, Ollama
-from liteagent.providers.gemini_provider import Gemini
-from liteagent.providers.claude_provider import Claude
-from liteagent.providers.azure_ai import AzureAI
 from liteagent.internal.cleanup import register_provider
+
 
 @register_provider
 def gemini(
-    client: genai.Client = None,
-    model: str = "gemini-2.0-flash"
-) -> Provider: return Gemini(client or genai.Client(), model)
+    model: str = "gemini-2.0-flash",
+    **kwargs
+) -> Provider:
+    try:
+        from google import genai
+        from liteagent.providers.google.provider import Gemini
+
+        return Gemini(genai.Client(), model, **kwargs)
+    except ImportError:
+        raise ImportError(
+            "The google-genai package is required to use Gemini provider. "
+            "Please install it with 'pip install \"liteagents[gemini]\"'"
+        )
+
 
 @register_provider
 def ollama(
     model: str = 'llama3.2',
-    automatic_download: bool = True
-) -> Provider: return Ollama(model=model, automatic_download=automatic_download)
+    automatic_download: bool = True,
+    **kwargs
+) -> Provider:
+    try:
+        from liteagent.providers.ollama.provider import Ollama
+        return Ollama(model=model, automatic_download=automatic_download, **kwargs)
+    except ImportError:
+        raise ImportError(
+            "The ollama package is required to use Ollama provider. "
+            "Please install it with 'pip install \"liteagents[ollama]\"'"
+        )
+
 
 @register_provider
 def openai_compatible(
     model: str,
-    client: AsyncOpenAI = None,
     base_url: str = None,
     api_key: str = None,
     **kwargs
 ) -> Provider:
-    return OpenAICompatible(
-        client=client or AsyncOpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            max_retries=5
-        ),
-        model=model,
-        **kwargs
-    )
+    try:
+        from openai import AsyncOpenAI
+        from liteagent.providers.openai.provider import openai_compatible
+
+        return openai_compatible(
+            client=AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                max_retries=5
+            ),
+            model=model,
+            **kwargs
+        )
+    except ImportError:
+        raise ImportError(
+            "The openai package is required to use OpenAI compatible providers. "
+            "Please install it with 'pip install \"liteagents[openai]\"'"
+        )
+
 
 @register_provider
 def azureai(
@@ -49,36 +72,52 @@ def azureai(
     api_key: str = None,
     **kwargs
 ) -> Provider:
-    return AzureAI(
-        model=model,
-        base_url=base_url,
-        api_key=api_key,
-        **kwargs
-    )
+    try:
+        from liteagent.providers.azure.provider import AzureAI
+        return AzureAI(
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            **kwargs
+        )
+    except ImportError:
+        raise ImportError(
+            "The azure-ai-inference package is required to use Azure AI provider. "
+            "Please install it with 'pip install \"liteagents[azure]\"'"
+        )
+
 
 @register_provider
 def claude(
     model: str = 'claude-3-7-sonnet-20250219',
-    client: AsyncAnthropic = None,
     api_key: str = None,
     **kwargs
 ) -> Provider:
-    return Claude(
-        client=client or AsyncAnthropic(
-            api_key=api_key or os.getenv('ANTHROPIC_API_KEY'),
-        ),
-        model=model,
-        max_tokens=32768,
-        **kwargs
-    )
+    try:
+        from anthropic import AsyncAnthropic
+        from liteagent.providers.anthropic.provider import claude
+        return claude(
+            client=AsyncAnthropic(
+                api_key=api_key or os.getenv('ANTHROPIC_API_KEY'),
+            ),
+            model=model,
+            max_tokens=32768,
+            **kwargs
+        )
+    except ImportError:
+        raise ImportError(
+            "The anthropic package is required to use the Claude provider. "
+            "Please install it with 'pip install \"liteagents[anthropic]\"' or 'pip install \"liteagents[agent]\"'"
+        )
 
-openai: partial[Provider] = partial(
+
+openai = partial(
     openai_compatible,
-    model='gpt-4o-mini',
+    model='gpt-4.1-mini',
     api_key=os.getenv('OPENAI_API_KEY')
 )
 
-openrouter: partial[Provider] = partial(
+openrouter = partial(
     openai_compatible,
     base_url='https://api.openrouter.ai/v1',
     model='openai/gpt-3.5-turbo',
@@ -86,7 +125,7 @@ openrouter: partial[Provider] = partial(
     max_tokens=8192
 )
 
-deepseek: partial[Provider] = partial(
+deepseek = partial(
     openai_compatible,
     base_url='https://api.deepseek.com/v1',
     model='deepseek-chat',

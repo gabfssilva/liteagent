@@ -1,13 +1,17 @@
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-from atlassian import Jira
+from liteagent.internal import depends_on
+
+if TYPE_CHECKING:
+    from atlassian import Jira
 
 from liteagent import Tools, tool
 
-class JiraTools(Tools):
-    client: Jira
 
-    def __init__(self, client: Jira):
+class JiraTools(Tools):
+    client: 'Jira'
+
+    def __init__(self, client: 'Jira'):
         self.client = client
 
     @tool(emoji="🔍")
@@ -166,5 +170,9 @@ class JiraTools(Tools):
         """
         return self.client.user_find_by_user_string(query=query)
 
-def jira(client: Jira) -> Tools:
+
+@depends_on({
+    "atlassian": "atlassian-python-api"
+})
+def jira(client: 'Jira') -> Tools:
     return JiraTools(client=client)

@@ -3,13 +3,14 @@ from typing import AsyncIterator, Type
 
 from anthropic import AsyncAnthropic
 from anthropic._types import NOT_GIVEN
+from pydantic import BaseModel
 
 from liteagent import Tool
-from liteagent.provider import Provider
+from liteagent.internal import register_provider
 from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage, ImageURL, \
     ImageBase64, MessageContent
+from liteagent.provider import Provider
 
-from pydantic import BaseModel
 
 class Claude(Provider):
     name: str = "claude"
@@ -134,33 +135,13 @@ class Claude(Provider):
                     }]
                 }
 
-            case ToolMessage(id=id, content=BaseModel() as content):
+            case ToolMessage(id=id, content=content) as message:
                 return {
                     "role": "user",
                     "content": [{
                         "type": "tool_result",
                         "tool_use_id": id,
-                        "content": content.model_dump_json()
-                    }]
-                }
-
-            case ToolMessage(id=id, content=list() | dict() as content):
-                return {
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": id,
-                        "content": json.dumps(content)
-                    }]
-                }
-
-            case ToolMessage(id=id, content=str(content)):
-                return {
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": id,
-                        "content": content
+                        "content": await message.content_as_string()
                     }]
                 }
 
@@ -208,7 +189,7 @@ class Claude(Provider):
                 # Default case
                 case _:
                     pass
-                    
+
     async def destroy(self):
         """
         Close and clean up resources used by the Claude provider.
@@ -216,3 +197,16 @@ class Claude(Provider):
         """
         if hasattr(self, 'client') and hasattr(self.client, 'close'):
             await self.client.close()
+
+
+@register_provider
+def claude(
+    client: AsyncAnthropic,
+    model: str = 'claude-3-7-sonnet-20250219',
+    **kwargs
+) -> Provider:
+    return Claude(
+        model=model,
+        client=client,
+        **kwargs
+    )

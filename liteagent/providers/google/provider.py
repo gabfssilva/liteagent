@@ -96,3 +96,10 @@ class Gemini(Provider):
                     del d[key]
                 else:
                     self._recursive_purge_dict_key(d[key], k)
+
+@register_provider
+def gemini(
+    client: genai.Client = None,
+    model: str = "gemini-2.0-flash"
+) -> Provider: 
+    return Gemini(client or genai.Client(), model)

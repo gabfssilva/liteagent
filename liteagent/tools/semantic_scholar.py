@@ -1,12 +1,12 @@
+from typing import Optional, Union, Dict, List, Literal
+
+import httpx
 from pydantic import Field
 
 from liteagent import tool, Tools
-import httpx
-from typing import Optional, Union, Dict, List, Literal
 
-# Semantic Scholar field types
 SemanticScholarField = Literal[
-    'title', 'year', 'abstract', 'authors', 'authors.name', 'openAccessPdf.url', 
+    'title', 'year', 'abstract', 'authors', 'authors.name', 'openAccessPdf.url',
     'citationCount', 'referenceCount', 'url', 'references', 'citations',
     'name', 'paperCount', 'papers'
 ]
@@ -24,11 +24,11 @@ class SemanticScholar(Tools):
             base_url=base_url,
             headers={"x-api-key": api_key} if api_key else {}
         )
-    
+
     @tool(emoji='🔍')
     async def search(
-        self, 
-        query: str, 
+        self,
+        query: str,
         limit: Optional[int] = 10,
         fields: List[SemanticScholarField] = [
             "title",
@@ -45,15 +45,15 @@ class SemanticScholar(Tools):
         """
         fields_str = ",".join(fields)
         url = f"/paper/search?query={query}&limit={limit}&fields={fields_str}"
-        
+
         response = await self._client.get(url)
         response.raise_for_status()
         return response.json()
-    
+
     @tool(emoji='📄')
     async def paper(
-        self, 
-        paper_id: str, 
+        self,
+        paper_id: str,
         fields: List[SemanticScholarField] = [
             "title",
             "year",
@@ -69,15 +69,15 @@ class SemanticScholar(Tools):
         """
         fields_str = ",".join(fields)
         url = f"/paper/{paper_id}?fields={fields_str}"
-        
+
         response = await self._client.get(url)
         response.raise_for_status()
         return response.json()
-    
+
     @tool(emoji='👤')
     async def author(
-        self, 
-        author_id: str, 
+        self,
+        author_id: str,
         fields: List[SemanticScholarField] = [
             "name",
             "paperCount",
@@ -90,14 +90,14 @@ class SemanticScholar(Tools):
         """
         fields_str = ",".join(fields)
         url = f"/author/{author_id}?fields={fields_str}"
-        
+
         response = await self._client.get(url)
         response.raise_for_status()
         return response.json()
-    
+
     @tool(emoji='👥')
     async def author_search(
-        self, 
+        self,
         query: str = Field(..., description="The author's name"),
         limit: Optional[int] = 10,
         fields: List[SemanticScholarField] = [
@@ -111,7 +111,7 @@ class SemanticScholar(Tools):
         """
         fields_str = ",".join(fields)
         url = f"/author/search?query={query}&limit={limit}&fields={fields_str}"
-        
+
         response = await self._client.get(url)
         response.raise_for_status()
         return response.json()

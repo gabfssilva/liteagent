@@ -1,6 +1,5 @@
 from typing import Optional
 
-from pyalex import Works, Authors, Sources, Institutions, Topics
 from pydantic import Field
 
 from liteagent import tool, Tools
@@ -16,6 +15,7 @@ class OpenAlex(Tools):
         )
     ) -> dict:
         """ A tool for fetching OpenAlex's works. """
+        from pyalex import Works
 
         work = Works()[ref]
 
@@ -23,7 +23,8 @@ class OpenAlex(Tools):
             "id": work['id'],
             "title": work['title'],
             "abstract": work['abstract'],
-            "authors": list(map(lambda author: author.get('author', None).get('display_name', None), work.get('authorship', []))),
+            "authors": list(
+                map(lambda author: author.get('author', None).get('display_name', None), work.get('authorship', []))),
             "open_access": work['open_access'],
         }
 
@@ -36,6 +37,8 @@ class OpenAlex(Tools):
         )
     ) -> dict:
         """ A tool for fetching OpenAlex's authors. """
+        from pyalex import Authors
+
         author = Authors()[ref]
 
         return {
@@ -52,6 +55,7 @@ class OpenAlex(Tools):
         )
     ) -> dict:
         """ A tool for fetching OpenAlex's sources. """
+        from pyalex import Sources
 
         source = Sources()[ref]
         return {
@@ -68,6 +72,8 @@ class OpenAlex(Tools):
         )
     ) -> dict:
         """ A tool for fetching OpenAlex's institutions. """
+        from pyalex import Institutions
+
         institution = Institutions()[ref]
 
         return {
@@ -84,6 +90,8 @@ class OpenAlex(Tools):
         )
     ) -> dict:
         """ A tool for fetching OpenAlex's topics. """
+        from pyalex import Topics
+
         topic = Topics()[ref]
         return {
             "id": topic['id'],
@@ -102,6 +110,7 @@ class OpenAlex(Tools):
         max_works: int = Field(..., description="The max number of works to be returned in the result")
     ) -> list[dict]:
         """ a tool for searching works by OpenAlex's criteria """
+        from pyalex import Works
 
         filters = {
             "abstract": abstract,
@@ -127,7 +136,8 @@ class OpenAlex(Tools):
             "title": work['title'],
             "abstract": work['abstract'],
             "open_access": work['open_access'],
-            "authors": list(map(lambda author: author.get('author', None).get('display_name', None), work.get('authorships', []))),
+            "authors": list(
+                map(lambda author: author.get('author', None).get('display_name', None), work.get('authorships', []))),
         }, iterator()))
 
 

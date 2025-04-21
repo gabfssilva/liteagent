@@ -1,84 +1,131 @@
-from typing import Literal, Union, List
+import json
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, is_dataclass, asdict, field
+from typing import Literal, Iterator
 
-from pydantic import BaseModel, Field, JsonValue
-from pydantic.json_schema import SkipJsonSchema
+from pydantic import BaseModel, JsonValue
+
+from liteagent.internal.memoized import ContentStream
 
 
-class ToolRequest(BaseModel):
-    """
-    Represents the request of a tool.
-    """
+@dataclass
+class ExecutionError:
+    exception: str
+    error: str
+    should_tell_user: bool
+    should_retry: Literal["yes", "no", "maybe"]
 
-    id: str = Field(..., description="A unique identifier for the tool invocation.")
-    name: str = Field(..., description="The name of the tool.")
-    arguments: dict | list | str = Field(
-        ..., description="The arguments of the tool, which can be a dict, list or string."
-    )
-    origin: SkipJsonSchema[Literal['local', 'model']] = 'model'
 
+@dataclass
+class ToolRequest:
+    id: str
+    name: str
+    arguments: dict | list | str
+    origin: Literal["local", "model"] = "model"
+
+
+@dataclass
+class ImageURL:
+    url: str
+
+
+@dataclass
+class ImageBase64:
+    base64: str
+
+
+Image = ImageURL | ImageBase64
+Text = str
+
+Content = Text | Image | dict | JsonValue | ToolRequest | BaseModel
+
+PartialContent = ContentStream[Content] | AsyncIterator[Content] | Iterator[Content]
+CompleteContent = Content | list[Content]
+MessageContent = CompleteContent | PartialContent
 
 Role = Literal["user", "assistant", "system", "tool"]
 
 
-class ImageURL(BaseModel):
-    url: str = Field(..., description="The URL of the image.")
-
-
-class ImageBase64(BaseModel):
-    base64: str = Field(..., description="The base64 of the image.")
-
-
-ImageContent = ImageURL | ImageBase64
-TextContent = str
-
-Content = TextContent | ImageContent | dict | JsonValue | ToolRequest | BaseModel
-
-MessageContent = Content | list[Content]
-
-class AgentParent(BaseModel):
-    name: str = Field(..., description="The name of the parent agent.")
-    tool_id: str = Field(..., description="The ID of the parent tool.")
-
-class Message(BaseModel):
-    """
-    Abstract base class for all message types.
-    """
+@dataclass
+class Message:
     role: Role
-    content: MessageContent = Field(..., description="The content of the message.")
-    parent: SkipJsonSchema[AgentParent | None] = None
+    content: MessageContent
 
+    def __post_init__(self):
+        if isinstance(self.content, ContentStream):
+            return
+
+        if isinstance(self.content, AsyncIterator):
+            self.content = ContentStream.from_async_iterator(self.content)
+
+    async def acontent(self) -> MessageContent:
+        if isinstance(self.content, ContentStream):
+            return await self.content.collect()
+
+        return self.content
+
+    @staticmethod
+    async def _as_json(content) -> JsonValue:
+        match content:
+            case BaseModel() as model:
+                return model.model_dump()
+            case Message() as message:
+                return await message.to_dict()
+            case dt if is_dataclass(dt):
+                return asdict(dt)
+            case dict() | str() | int() | float() | bool() as json_value:
+                return json_value
+            case list() as items:
+                return [await Message._as_json(item) for item in items]
+            case _:
+                raise TypeError(f"Unsupported type for serialization: {type(content)}")
+
+    async def content_as_json(self) -> JsonValue:
+        return await self._as_json(await self.acontent())
+
+    async def content_as_string(self) -> str:
+        return json.dumps(await self.content_as_json())
+
+    async def to_dict(self) -> JsonValue:
+        return {
+            "role": self.role,
+            "content": await self.content_as_string(),
+        }
+
+
+@dataclass
 class UserMessage(Message):
-    """
-    Represents a message from the user.
-    """
-    role: str = Field(default="user", description="The role of the message.")
-    content: MessageContent = Field(..., description="The content of the user's message.")
+    role: Literal['user'] = field(init=False, default="user")
 
 
+@dataclass
 class AssistantMessage(Message):
-    """
-    Represents a message from the assistant.
-    """
-    role: str = Field(default="assistant", description="The role of the message.")
-    content: Union[str, ToolRequest, BaseModel] = Field(
-        ..., description="The content of the assistant's message, which can be plain text or a tool request."
-    )
+    role: Literal['assistant'] = field(init=False, default="assistant")
+    content: ContentStream[str] | ToolRequest | BaseModel
+
+    async def acontent(self) -> MessageContent:
+        if isinstance(self.content, ContentStream):
+            return ''.join(await self.content.collect())
+
+        return self.content
 
 
+@dataclass
 class SystemMessage(Message):
-    """
-    Represents a message from the system.
-    """
-    role: str = Field(default="system", description="The role of the message.")
-    content: str = Field(..., description="The content of the system's message.")
+    role: Literal['system'] = field(init=False, default="system")
+    content: str
 
 
+@dataclass
 class ToolMessage(Message):
-    """
-    Represents a message generated by a tool.
-    """
+    id: str
+    name: str
+    content: MessageContent | ExecutionError
+    role: Literal['tool'] = field(init=False, default="tool")
 
-    role: str = Field(default="tool", description="The role of the message.")
-    id: str = Field(..., description="A unique identifier for the tool invocation.")
-    name: str = Field(..., description="The name of the tool.")
-    content: MessageContent = Field(..., description="The output generated by a tool.")
+    async def acontent(self) -> MessageContent:
+        match await super().acontent():
+            case list() as items if any(filter(lambda item: isinstance(item, Message), items)):
+                return items[-1]
+            case content:
+                return content
