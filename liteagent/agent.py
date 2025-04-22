@@ -314,14 +314,17 @@ class Agent[Out]:
             eagerly_invoked = await self._eagerly_invoked_tools()
             agent_logger.debug("eager_tools_executed", count=len(eagerly_invoked) // 2)
 
+            prompt = self._system_prompt()
+
             message_list = [
-                SystemMessage(content=self._system_prompt()),
+                SystemMessage(content=prompt),
                 *messages,
                 *eagerly_invoked,
             ]
 
             agent_logger.debug("message_list_prepared",
                                system_count=1,
+                               system_message=prompt,
                                user_count=len(messages),
                                eager_count=len(eagerly_invoked))
 
@@ -330,7 +333,7 @@ class Agent[Out]:
                 yield m
 
             agent_logger.debug("starting_call")
-            async for m in self._call(messages):
+            async for m in self._call(message_list):
                 yield m
 
         agent_logger.debug("starting_intercept")

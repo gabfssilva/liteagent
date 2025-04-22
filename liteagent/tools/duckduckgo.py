@@ -19,9 +19,9 @@ def duckduckgo(
     max_results: int | None = Field(...,
                                     description="The maximum number of results to return. Defaults to 100. Recommended >= 50 and <= 250"),
 ):
-    from duckduckgo_search import DDGS
+    """ search for information on the internet using DuckDuckGo. """
 
-    """ Use this tool for searching the internet. """
+    from duckduckgo_search import DDGS
 
     return DDGS().text(
         keywords,

@@ -1,6 +1,7 @@
 from typing import AsyncIterator, List
 
 from .agent import Agent
+from .internal.as_coroutine import isolated_loop
 from .logger import log
 from .message import Message, UserMessage, MessageContent, AssistantMessage, ToolMessage, ToolRequest
 
@@ -69,24 +70,25 @@ class Session:
     ) -> AsyncIterator[Message]:
         session_logger = log.bind(agent=self.agent.name, session_id=id(self))
         session_logger.info("session_called")
-        
+
+        @isolated_loop
         async def stream_and_track():
             session_logger.debug("wrapping_user_input")
             user_input = self._wrap_user_input(*content, **kwargs)
             session_logger.debug("user_input_wrapped", message_count=len(user_input))
-            
+
             ordered_conv = self.ordered_conversation()
             session_logger.debug("conversation_ordered", message_count=len(ordered_conv))
-            
+
             full_conversation = ordered_conv + user_input
             session_logger.debug("full_conversation_prepared", message_count=len(full_conversation))
 
             # Replace the print with structured logging
-            session_logger.debug("sending_to_agent", 
-                               conversation_size=len(full_conversation),
-                               user_messages=len([m for m in full_conversation if m.role == "user"]),
-                               assistant_messages=len([m for m in full_conversation if m.role == "assistant"]),
-                               tool_messages=len([m for m in full_conversation if m.role == "tool"]))
+            session_logger.debug("sending_to_agent",
+                                 conversation_size=len(full_conversation),
+                                 user_messages=len([m for m in full_conversation if m.role == "user"]),
+                                 assistant_messages=len([m for m in full_conversation if m.role == "assistant"]),
+                                 tool_messages=len([m for m in full_conversation if m.role == "tool"]))
 
             session_logger.debug("streaming_from_agent_started")
             async for message in await self.agent(*full_conversation, stream=True):
@@ -98,14 +100,14 @@ class Session:
                     session_logger.debug("skipping_system_message")
                     continue
 
-                session_logger.debug("message_received", 
-                                   role=message.role, 
-                                   content_type=type(message.content).__name__)
-                
+                session_logger.debug("message_received",
+                                     role=message.role,
+                                     content_type=type(message.content).__name__)
+
                 yield message
                 self.conversation.append(message)
-                session_logger.debug("message_added_to_conversation", 
-                                   conversation_size=len(self.conversation))
+                session_logger.debug("message_added_to_conversation",
+                                     conversation_size=len(self.conversation))
 
             session_logger.debug("streaming_from_agent_completed")
 

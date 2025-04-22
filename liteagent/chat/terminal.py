@@ -8,7 +8,7 @@ from ..message import Message
 def terminal(
     agent_f: Optional[Agent[AsyncIterator[Message]]] = None,
     *,
-    theme: str = "ivory-paper",
+    theme: str = "gruvbox",
     logo: str = None,
 ):
     """

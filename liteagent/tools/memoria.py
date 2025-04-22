@@ -1,19 +1,25 @@
 import asyncio
 import json
 from abc import ABC, abstractmethod
+from typing import Literal
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from liteagent import tool, Tools
 
 
+class MemoryEntry(BaseModel):
+    content: str
+    type: Literal["semantic", "episodic", "procedural"] = "semantic"
+
+
 class Storage(ABC):
     @abstractmethod
-    async def store(self, content: str) -> str:
+    async def store(self, entry: MemoryEntry) -> str:
         pass
 
     @abstractmethod
-    async def retrieve(self) -> dict[str, str]:
+    async def retrieve(self) -> dict[str, MemoryEntry]:
         pass
 
     @abstractmethod
@@ -32,35 +38,35 @@ class FileStorage(Storage):
         self.file_path = file_path
         self.similarity_threshold = similarity_threshold
         self.embedder = TextEmbedding()
+        self._lock = asyncio.Lock()
 
-    async def store(self, content: str) -> str:
+    async def store(self, entry: MemoryEntry) -> str:
         import numpy as np
 
         memories = await self.retrieve()
+        new_embedding = np.array(list(self.embedder.embed([entry.content]))[0])
 
-        new_embedding = np.array(list(self.embedder.embed([content]))[0])
-
-        # Check similarity with existing memories
-        for memory_id, existing_content in memories.items():
-            existing_embedding = np.array(list(self.embedder.embed([existing_content]))[0])
+        for memory_id, existing_entry in memories.items():
+            existing_embedding = np.array(list(self.embedder.embed([existing_entry.content]))[0])
             similarity = np.dot(new_embedding, existing_embedding) / (
-                np.linalg.norm(new_embedding) * np.linalg.norm(existing_embedding))
-
-            if similarity >= self.similarity_threshold:  # If sufficiently similar, return existing ID
+                np.linalg.norm(new_embedding) * np.linalg.norm(existing_embedding)
+            )
+            if similarity >= self.similarity_threshold:
                 return memory_id
 
         new_id = str(len(memories))
-        async with asyncio.Lock():
-            memories[new_id] = content
+        async with self._lock:
+            memories[new_id] = entry
             with open(self.file_path, "w", encoding="utf-8") as f:
-                json.dump(memories, f, indent=4)
+                json.dump({k: v.model_dump() for k, v in memories.items()}, f, indent=4, default=str)
 
         return new_id
 
-    async def retrieve(self) -> dict[str, str]:
+    async def retrieve(self) -> dict[str, MemoryEntry]:
         try:
             with open(self.file_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                raw = json.load(f)
+                return {k: MemoryEntry(**v) for k, v in raw.items()}
         except (FileNotFoundError, json.JSONDecodeError):
             return {}
 
@@ -70,11 +76,12 @@ class FileStorage(Storage):
         if memory_id not in memories:
             return False
 
-        async with asyncio.Lock():
-            memories[memory_id] = new_content
-
+        async with self._lock:
+            entry = memories[memory_id]
+            entry.content = new_content
+            memories[memory_id] = entry
             with open(self.file_path, "w", encoding="utf-8") as f:
-                json.dump(memories, f, indent=2)
+                json.dump({k: v.model_dump() for k, v in memories.items()}, f, indent=2, default=str)
 
         return True
 
@@ -84,11 +91,10 @@ class FileStorage(Storage):
         if memory_id not in memories:
             return False
 
-        async with asyncio.Lock():
+        async with self._lock:
             memories.pop(memory_id)
-
             with open(self.file_path, "w", encoding="utf-8") as f:
-                json.dump(memories, f, indent=4)
+                json.dump({k: v.model_dump() for k, v in memories.items()}, f, indent=4, default=str)
 
         return True
 
@@ -98,25 +104,23 @@ class Memoria(Tools):
         self.storage = storage
 
     @tool(emoji='💭')
-    async def store(self, memories: list[str] = Field(...,
-                                                      description='The memories the user requested you to keep, in a concise manner. It is possible to save multiple memories at once, so, always do it when you can.')) -> str:
+    async def store(self, memories: list[MemoryEntry] = Field(...,
+                                                              description='The memories the user requested you to keep.')) -> \
+        list[str]:
         """
-        stores the memories and responds the saved IDs.
+        Stores a list of structured memories and returns their assigned IDs.
+        Every time the user shares something meaningful, you can use this tool to store it in your long-term memory.
         """
-
         ids = []
-
         for memory in memories:
             ids.append(await self.storage.store(memory))
-
-        return f'Memories successfully stored with ids: {ids}'
+        return ids
 
     @tool(eager=True, emoji='🧠')
-    async def retrieve(self) -> dict[str, str]:
+    async def retrieve(self) -> dict[str, MemoryEntry]:
         """
-        retrieves all stored memories. check the available memories before asking for more information.
+        retrieves all stored memories as structured entries.
         """
-
         return await self.storage.retrieve()
 
     @tool(emoji='💭')
@@ -124,7 +128,6 @@ class Memoria(Tools):
         """
         updates a memory by ID and returns confirmation.
         """
-
         success = await self.storage.update(memory_id, new_content)
         return "Memory updated successfully." if success else "Memory not found."
 
@@ -133,7 +136,6 @@ class Memoria(Tools):
         """
         deletes a memory by ID and returns confirmation.
         """
-
         success = await self.storage.delete(memory_id)
         return "Memory deleted successfully." if success else "Memory not found."
 
