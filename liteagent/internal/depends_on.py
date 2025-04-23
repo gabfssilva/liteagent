@@ -1,3 +1,4 @@
+import asyncio
 import functools
 import inspect
 
@@ -23,7 +24,7 @@ def depends_on(modules: dict, message: str = None):
 
         @functools.wraps(fn)
         async def async_wrapper(*args, **kwargs):
-            evaluate()
+            await asyncio.to_thread(evaluate)
             return await fn(*args, **kwargs)
 
         @functools.wraps(fn)
