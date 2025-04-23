@@ -1,11 +1,10 @@
 import asyncio
 import inspect
 import re
-from abc import ABC
-from dataclasses import dataclass
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from functools import partial
-from inspect import Signature
-from typing import List, AsyncIterator
+from typing import List, AsyncIterator, Any, Coroutine
 from typing import Type, Callable, Awaitable, Protocol, runtime_checkable
 
 from pydantic import BaseModel, JsonValue, create_model
@@ -13,19 +12,26 @@ from pydantic.fields import FieldInfo, Field
 
 from liteagent.logger import log
 
-Out = str | dict | BaseModel
+Out = str | dict | BaseModel | Coroutine[Any, Any, 'Out']
 
-Handler = Callable[..., Awaitable[Out | AsyncIterator[Out]]]
+Handler = Callable[..., Out | Awaitable[Out | AsyncIterator[Out]] | AsyncIterator[Out]]
 
+class ToolDef(ABC):
+    @abstractmethod
+    def tools(self) -> List['Tool']:
+        raise NotImplementedError
 
-@dataclass
-class Tool:
+@dataclass(kw_only=True)
+class Tool(ToolDef):
     name: str
     description: str
     input: Type[BaseModel]
     handler: Handler
     eager: bool = False
     emoji: str = '🔧'
+
+    def tools(self) -> List['Tool']:
+        return [self]
 
     def _prepare(self, schema):
         """Recursively modifies schema to enforce 'strict': True and 'additionalProperties': False."""
@@ -180,23 +186,24 @@ class Tool:
                 should_tell_user=True
             )
 
+class Tools(ToolDef, ABC):
+    def tools(self) -> List[Tool]:
+        tools = []
 
-class Tools(ABC):
-    def tools(self):
-        for _, tool in inspect.getmembers(self.__class__, predicate=lambda m: self.predicate(m)):
-            tool.handler = partial(tool.handler, self)
-            tool.name = f"{self.base_name()}__{tool.name}"
-            yield tool
+        for _, tool_def in inspect.getmembers(self.__class__, predicate=lambda m: self.predicate(m)):
+            for tool in tool_def.tools():
+                tool.handler = partial(tool.handler, self)
+                tool.name = f"{self.base_name()}__{tool.name}"
+                tools.append(tool)
+
+        return tools
 
     @staticmethod
     def predicate(member):
-        return isinstance(member, Tool)
+        return isinstance(member, ToolDef)
 
     def base_name(self) -> str:
         return re.sub(r'(?<!^)(?=[A-Z])', '_', self.__class__.__name__).lower()
-
-
-ToolDef = Tool | List[Tool] | Tools | Callable[[...], Awaitable[str | dict | BaseModel]] | Awaitable['ToolDef']
 
 
 @runtime_checkable
@@ -204,47 +211,82 @@ class ToolResponse(Protocol):
     def __tool_response__(self) -> JsonValue:
         pass
 
+class FunctionToolDef(ToolDef):
+    def __init__(self, function: Callable, name: str = None, eager: bool = False, emoji='🔧'):
+        self.function = function
+        self.name = name or function.__name__
+        self.description = inspect.getdoc(function) or f"Tool {self.name}"
+        self.eager = eager
+        self.emoji = emoji
 
-def parse_tool(
-    function: Callable,
-    name: str = None,
-    signature: Signature | None = None,
-    description: str | None = None,
-    eager: bool = False,
-    emoji: str = '🔧'
-):
-    if name is None:
-        name = function.__name__
+    def tools(self) -> List[Tool]:
+        signature = inspect.signature(self.function)
 
-    if signature is None:
-        signature = inspect.signature(function)
+        input_fields = [
+            (n,
+             param.annotation,
+             param.default if param.default != param.empty else Field(...))
+            for n, param in signature.parameters.items() if n != 'self'
+        ]
 
-    if description is None:
-        description = inspect.getdoc(function)
+        field_definitions = {}
 
-    if description is None:
-        description = f"Tool {name}"
+        for field_name, field_type, field_default in input_fields:
+            if isinstance(field_default, FieldInfo):
+                field_definitions[field_name] = (field_type, field_default)
+            else:
+                field_definitions[field_name] = (field_type, Field(default=field_default))
 
-    input_fields = [
-        (n,
-         param.annotation,
-         param.default if param.default != param.empty else Field(...))
-        for n, param in signature.parameters.items() if n != 'self'
-    ]
+        return [Tool(
+            name=self.name,
+            description=self.description,
+            input=create_model(self.name.capitalize(), **field_definitions),
+            handler=self.function,
+            emoji=self.emoji,
+            eager=self.eager
+        )]
 
-    field_definitions = {}
+from typing import TYPE_CHECKING
 
-    for field_name, field_type, field_default in input_fields:
-        if isinstance(field_default, FieldInfo):
-            field_definitions[field_name] = (field_type, field_default)
-        else:
-            field_definitions[field_name] = (field_type, Field(default=field_default))
+if TYPE_CHECKING:
+    from .agent import Agent
+    from . import Message
 
-    return Tool(
-        name=name,
-        description=description.strip(),
-        input=create_model(name.capitalize(), **field_definitions),
-        handler=function,
-        eager=eager,
-        emoji=emoji
-    )
+@dataclass(kw_only=True)
+class AgentDispatcherTool(Tool):
+    agent: 'Agent'
+
+    name: str = field(init=False)
+    description: str = field(init=False)
+    input: Type[BaseModel] = field(init=False)
+    handler: Handler = field(init=False)
+    eager: bool = field(default=False, init=False)
+    emoji: str = field(default='🤖', init=False)
+
+    def __post_init__(self):
+        self.name = f"{self.agent.name.replace(' ', '_').lower()}_redirection"
+        self.description = f"Dispatch to the {self.agent.name} agent: {self.agent.description or ''}"
+        self.input = self._create_input_model()
+        self.handler = self._dispatch
+
+    async def _dispatch(self, *args, **kwargs) -> AsyncIterator['Message']:
+        args = filter(lambda arg: arg is not self, args)
+        return await self.agent(*list(args), stream=True, **kwargs)
+
+    def _create_input_model(self):
+        if not self.agent.signature:
+            return create_model(
+                f"{self.agent.name.capitalize()}Input",
+                query=(str, Field(..., description="Query to send to the agent"))
+            )
+
+        parameters = {}
+        for name, param in self.agent.signature.parameters.items():
+            annotation = param.annotation if param.annotation != inspect.Parameter.empty else Any
+            default = param.default if param.default != inspect.Parameter.empty else ...
+            parameters[name] = (annotation, Field(default=default))
+
+        return create_model(
+            f"{self.agent.name.capitalize()}Input",
+            **parameters
+        )

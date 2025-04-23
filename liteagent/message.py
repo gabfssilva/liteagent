@@ -128,6 +128,7 @@ class ToolMessage(Message):
     content: MessageContent | ExecutionError
     role: Literal['tool'] = field(init=False, default="tool")
     tool: Tool
+    elapsed_time: float
 
     async def acontent(self) -> MessageContent:
         match await super().acontent():

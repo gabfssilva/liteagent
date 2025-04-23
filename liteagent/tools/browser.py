@@ -5,6 +5,7 @@ from typing import Optional, Literal
 from playwright.async_api import async_playwright, Page, Browser as PWBrowser
 
 from liteagent import Tools, tool
+from liteagent.internal.as_coroutine import concurrency
 
 
 class Browser(Tools):
@@ -48,27 +49,31 @@ class Browser(Tools):
         """Returns all visible elements on the current page with their properties."""
         await self._ensure_active_page()
         elements = await self.page.query_selector_all("*")
-        result = []
 
-        for el in elements:
+        @concurrency(10)
+        async def inspect(e):
+            visible = await e.is_visible()
+
+            if not visible:
+                return None
+
             try:
-                visible = await el.is_visible()
-                if not visible:
-                    continue
-                tag = await el.evaluate("e => e.tagName")
-                text = await el.inner_text()
-                attrs = await el.evaluate(
+                tag = await e.evaluate("e => e.tagName")
+                text = await e.inner_text()
+                attrs = await e.evaluate(
                     "e => Array.from(e.attributes).reduce((acc, a) => { acc[a.name] = a.value; return acc; }, {})"
                 )
-                result.append({
+
+                return {
                     "tag": tag,
                     "text": text.strip(),
                     "attributes": attrs,
-                })
+                }
             except Exception:
-                continue
+                return None
 
-        return result
+        results = await asyncio.gather(*(inspect(el) for el in elements))
+        return [r for r in results if r is not None]
 
     @tool(emoji='🖱️')
     async def find_and_click(self, selector: str) -> str:
@@ -396,6 +401,26 @@ class Browser(Tools):
             "title": await self.page.title(),
             "url": self.page.url,
         }
+
+    @staticmethod
+    def _to_css_selector(el: dict) -> str:
+        tag = el.get("tag", "div")
+        attrs = el.get("attrs", {})
+
+        parts = [tag]
+
+        if "id" in attrs:
+            parts.append(f'#{attrs["id"]}')
+        elif "name" in attrs:
+            parts.append(f'[name="{attrs["name"]}"]')
+        elif "type" in attrs and tag in {"input", "button"}:
+            parts.append(f'[type="{attrs["type"]}"]')
+        elif "class" in attrs:
+            # use only the first class to keep it compact
+            first_class = attrs["class"].split()[0]
+            parts.append(f'.{first_class}')
+
+        return "".join(parts)
 
 
 browser = Browser()

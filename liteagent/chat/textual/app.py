@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import time
 from typing import AsyncIterable, AsyncIterator
 
 from pydantic import JsonValue
@@ -12,7 +13,7 @@ from textual.content import Content
 from textual.reactive import reactive, var
 from textual.widgets import Markdown, Input, Static, Pretty, TabbedContent
 
-from liteagent import AssistantMessage, UserMessage, ToolRequest, Agent, ToolMessage, Tool
+from liteagent import AssistantMessage, UserMessage, ToolRequest, Agent, ToolMessage, Tool, AgentDispatcherTool
 from liteagent.internal.memoized import ContentStream
 from liteagent.message import ExecutionError, Message
 
@@ -80,6 +81,7 @@ class CollapsibleChatView(Static):
 
     def __init__(
         self,
+        *,
         id: str,
         name: str,
         prompt: str,
@@ -128,6 +130,9 @@ class CollapsibleChatView(Static):
     async def process(self, messages) -> None:
         async def do_process():
             try:
+                if isinstance(messages, ExecutionError):
+                    raise Exception(messages)
+
                 await self.query_one(ChatView).process(messages, True)
                 self.state = "completed"
             except Exception as e:
@@ -143,6 +148,8 @@ class ToolUseWidget(Static):
     tool_args = var({})
     state = reactive("waiting")
     frame = reactive(0)
+    start = reactive(0)
+    elapsed = reactive(0)
 
     def __init__(
         self,
@@ -156,7 +163,8 @@ class ToolUseWidget(Static):
         self.tool_emoji = tool.emoji
         self.tool_args = arguments
         self.set_styles(border_title=tool.emoji)
-        self.border_title = f"{self.tool_emoji} {self.tool_name} ⚪"
+        self.title_template = f"{self.tool_emoji} {self.tool_name}" + " {emoji}"
+        self.border_title =  self.title_template.format(emoji="⚪")
         self.tooltip = Content.from_text(tool.description, markup=False)
 
     @staticmethod
@@ -170,7 +178,12 @@ class ToolUseWidget(Static):
 
     def on_mount(self) -> None:
         self.state = "waiting"
-        self._timer = self.set_interval(0.5, self._blink)
+        self.start = time.perf_counter()
+        self._blink_timer = self.set_interval(0.5, self._blink)
+        self._elapsed_timer = self.set_interval(0.1, self._elapsed)
+
+    def _elapsed(self):
+        self.elapsed = time.perf_counter() - self.start
 
     def _blink(self) -> None:
         if self.state == "waiting":
@@ -181,15 +194,20 @@ class ToolUseWidget(Static):
 
     def watch_frame(self, frame):
         emoji = "⚪" if frame == 0 else "  "
-        self.border_title = f"{self.tool_emoji} {self.tool_name} {emoji}"
+        self.border_title = self.title_template.format(emoji=emoji)
+
+    def watch_elapsed(self, elapsed):
+        self.border_subtitle = f"{elapsed:.1f}s"
 
     def watch_state(self, state: str) -> None:
         if state == "completed":
-            self._timer.stop()
-            self.border_title = f"{self.tool_emoji} {self.tool_name} 🟢"
+            self._blink_timer.stop()
+            self._elapsed_timer.stop()
+            self.border_title = self.title_template.format(emoji="🟢")
         elif state == "failed":
-            self._timer.stop()
-            self.border_title = f"{self.tool_emoji} {self.tool_name} 🔴"
+            self._blink_timer.stop()
+            self._elapsed_timer.stop()
+            self.border_title = self.title_template.format(emoji="🔴")
 
     def complete(self, failed: bool) -> None:
         self.state = "failed" if failed else "completed"
@@ -234,24 +252,24 @@ class ChatView(VerticalScroll):
 
                     self.run_worker(append_stream(stream))
 
-                case AssistantMessage(content=ToolRequest() as tool_request) if "_redirection" in tool_request.name:
+                case AssistantMessage(content=ToolRequest(id=tool_id,arguments=arguments, tool=AgentDispatcherTool() as tool)):
                     await self.mount(CollapsibleChatView(
-                        f"{tool_request.name}_{tool_request.id}",
-                        tool_request.name,
-                        tool_request.arguments,
-                        self._agent,
+                        id=f"{tool.name}_{tool_id}",
+                        name=tool.name,
+                        prompt=arguments,
+                        agent=self._agent,
                         classes="tool-message-inner" if inner else "tool-message",
                     ))
 
-                case AssistantMessage(content=ToolRequest() as tool_request):
+                case AssistantMessage(content=ToolRequest(id=tool_id,arguments=arguments, tool=tool)):
                     await self.mount(ToolUseWidget(
-                        f"{tool_request.name}_{tool_request.id}",
-                        tool_request.arguments,
-                        tool_request.tool,
-                        "tool-message" if not inner else "tool-message-inner"
+                        id=f"{tool.name}_{tool_id}",
+                        arguments=arguments,
+                        tool=tool,
+                        classes="tool-message" if not inner else "tool-message-inner"
                     ))
 
-                case ToolMessage(content=ContentStream()) as tool_message if "_redirection" in tool_message.name:
+                case ToolMessage(tool=AgentDispatcherTool()) as tool_message:
                     widget = self.query_one(f"#{tool_message.name}_{tool_message.id}", CollapsibleChatView)
                     self.run_worker(widget.process(tool_message.content))
 

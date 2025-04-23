@@ -72,3 +72,16 @@ def isolated_loop(fn: Callable[..., Any]):
             return asyncio.wrap_future(future)
 
     return wrapper
+
+def concurrency(maximum: int):
+    semaphore = asyncio.Semaphore(maximum)
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        async def wrapper(*args, **kwargs):
+            async with semaphore:
+                return await fn(*args, **kwargs)
+
+        return wrapper
+
+    return decorator

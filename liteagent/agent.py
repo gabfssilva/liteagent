@@ -1,5 +1,6 @@
 import asyncio
 import itertools
+import time
 from inspect import Signature
 from typing import Callable, List, AsyncIterator, Type, Literal, overload
 
@@ -10,7 +11,7 @@ from .logger import log
 from .message import Message, UserMessage, AssistantMessage, ToolRequest, ToolMessage, SystemMessage, MessageContent, \
     ExecutionError
 from .prompts import TOOL_AGENT_PROMPT
-from .tool import Tool, ToolDef, Tools
+from .tool import Tool, ToolDef
 
 AsyncInterceptor = Callable[['Agent', AsyncIterator[Message]], AsyncIterator[Message]]
 
@@ -35,7 +36,7 @@ class Agent[Out]:
     respond_as: Type[Out | Wrapped[Out]] = None
     signature: Signature = None
     user_prompt_template: str = None
-    _as_dispatcher: Tool = None
+    _as_dispatcher: ToolDef = None
 
     def __init__(
         self,
@@ -43,7 +44,6 @@ class Agent[Out]:
         provider: Provider,
         description: str = None,
         system_message: str = None,
-        initial_messages: List[Message] = None,
         tools: List[ToolDef | Callable] = None,
         team: List['Agent'] = None,
         intercept: AsyncInterceptor = None,
@@ -55,9 +55,10 @@ class Agent[Out]:
         self.name = name
         self.provider = provider
         self.description = description
-        self.tools = list(itertools.chain.from_iterable(
-            map(lambda tool: tool.tools() if isinstance(tool, Tools) else [tool], tools))) if tools else []
+        self.tools = list(itertools.chain.from_iterable(map(lambda tool: tool.tools(), tools))) if tools else []
         self.team = team or []
+        self._all_tools = self.tools + list(itertools.chain.from_iterable(map(lambda agent: agent.as_tool().tools(), self.team)))
+        self._tool_by_name = {t.name: t for t in self._all_tools}
         self.audit = audit or []
         self.intercept = intercept or None
         self.signature = signature
@@ -98,11 +99,11 @@ class Agent[Out]:
 
         return tool_request_size - tool_response_size
 
-    def _as_tool(self) -> Tool:
+    def as_tool(self) -> ToolDef:
         if not self._as_dispatcher:
-            from .agent_dispatch import AgentDispatcher
+            from .tool import AgentDispatcherTool
 
-            self._as_dispatcher = AgentDispatcher(self)
+            self._as_dispatcher = AgentDispatcherTool(agent=self)
 
         return self._as_dispatcher
 
@@ -122,10 +123,6 @@ class Agent[Out]:
         )
 
     @property
-    def _all_tools(self) -> List[Tool]:
-        return self.tools + list(map(lambda a: a._as_tool(), self.team))
-
-    @property
     def _tool_names(self) -> List[str]:
         return list(map(lambda t: t.name, self._all_tools))
 
@@ -133,13 +130,8 @@ class Agent[Out]:
     def _team_names(self) -> List[str]:
         return list(map(lambda t: t.name, self.team))
 
-    @property
-    def _tools(self) -> dict[str, Tool]:
-        all_tools = self._all_tools
-        return {t.name: t for t in all_tools}
-
     def tool_by_name(self, name: str) -> Tool | None:
-        return self._tools.get(name, None)
+        return self._tool_by_name.get(name, None)
 
     def _build_user_messages(
         self,
@@ -244,7 +236,7 @@ class Agent[Out]:
                         id=tool_id,
                         name=name,
                         arguments=arguments,
-                        tool=self._tools.get(name, None)
+                        tool=self.tool_by_name(name)
                     ))
 
                     execution_count = self.execution_count(messages, name)
@@ -291,7 +283,7 @@ class Agent[Out]:
         agent_logger = log.bind(agent=self.name)
         agent_logger.debug("run_tool_called", tool=tool_request.name)
 
-        chosen_tool = self._tools.get(tool_request.name, None)
+        chosen_tool = self.tool_by_name(tool_request.name)
 
         if not chosen_tool:
             agent_logger.error("tool_not_found", requested_tool=tool_request.name, available_tools=self._tool_names)
@@ -301,14 +293,20 @@ class Agent[Out]:
         agent_logger.debug("tool_execution_started", tool=tool_request.name, args=str(args))
 
         try:
+            start = time.perf_counter()
             result = await chosen_tool(**args)
-            agent_logger.debug("tool_execution_successful", tool=tool_request.name)
+            end = time.perf_counter()
+
+            total = end - start
+
+            agent_logger.debug("tool_execution_successful", tool=tool_request.name, seconds=f'{total:.4f}')
 
             return ToolMessage(
                 id=tool_request.id,
                 name=tool_request.name,
                 content=result,
-                tool=chosen_tool
+                tool=chosen_tool,
+                elapsed_time=total,
             )
         except Exception as e:
             agent_logger.error("tool_execution_failed", tool=tool_request.name, error=str(e),
@@ -422,13 +420,19 @@ class Agent[Out]:
             )
 
             try:
+                start = time.perf_counter()
                 tool_result = await tool()
-                agent_logger.debug("eager_tool_success", tool=tool.name, result_type=type(tool_result).__name__)
+                end = time.perf_counter()
+
+                total = end - start
+                agent_logger.debug("eager_tool_success", tool=tool.name, result_type=type(tool_result).__name__, seconds=f'{total:.4f}')
 
                 result.append(ToolMessage(
                     id='0',
                     name=tool.name,
                     content=tool_result,
+                    tool=tool,
+                    elapsed_time=total,
                 ))
             except Exception as e:
                 agent_logger.error("eager_tool_failed", tool=tool.name, error=str(e), error_type=type(e).__name__)

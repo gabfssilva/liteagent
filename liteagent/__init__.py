@@ -1,5 +1,5 @@
 from .prompts import TOOL_AGENT_PROMPT
-from .tool import Tool, Tools, ToolDef, ToolResponse
+from .tool import Tool, Tools, ToolDef, ToolResponse, AgentDispatcherTool
 from .message import Message, SystemMessage, AssistantMessage, UserMessage, ToolMessage, ToolRequest, ImageURL, \
     ImageBase64
 from .provider import Provider
@@ -16,6 +16,7 @@ __all__ = [
     "Tool",
     "Tools",
     "ToolDef",
+    "AgentDispatcherTool",
     "tool",
     "TOOL_AGENT_PROMPT",
     "Message",

@@ -1,19 +1,14 @@
 import inspect
-from typing import List, Callable
+from typing import List, Callable, Any
 
 from .agent import Agent, AsyncInterceptor
 from .provider import Provider
-from .tool import Tool, ToolDef, parse_tool
+from .tool import ToolDef, FunctionToolDef
 
 
-def tool(name: str = None, eager: bool = False, emoji: str = '🔧') -> Tool:
-    def decorator(function) -> Tool:
-        return parse_tool(
-            name=name,
-            function=function,
-            eager=eager,
-            emoji=emoji
-        )
+def tool(name: str = None, eager: bool = False, emoji: str = '🔧') -> ToolDef | Callable[..., ToolDef]:
+    def decorator(function) -> ToolDef:
+        return FunctionToolDef(function, name, eager, emoji)
 
     if callable(name):
         func = name
@@ -37,6 +32,16 @@ def agent[Out](
         user_prompt_template = inspect.getdoc(func)
         default_return_types = [inspect.Signature.empty]
         respond_as = None if signature.return_annotation in default_return_types else signature.return_annotation
+
+        if len(signature.parameters) == 0:
+            from inspect import Parameter
+
+            signature = signature.replace(parameters=[
+                Parameter("prompt", kind=Parameter.POSITIONAL_OR_KEYWORD, annotation=str)
+            ])
+
+            if user_prompt_template is None or user_prompt_template.strip() == "" :
+                user_prompt_template = "{prompt}"
 
         agent_instance = Agent[Out](
             name=name or func.__name__,
