@@ -1,17 +1,16 @@
 import asyncio
 import json
 import re
-from typing import AsyncIterable
+from typing import AsyncIterable, AsyncIterator
 
-import textual.visual
 from pydantic import JsonValue
 from rich.errors import MarkupError
 from textual import on
 from textual.app import App, ComposeResult
-from textual.containers import Container, VerticalScroll
+from textual.containers import VerticalScroll
 from textual.content import Content
 from textual.reactive import reactive, var
-from textual.widgets import Markdown, Input, Static, Pretty, TabbedContent, Tooltip
+from textual.widgets import Markdown, Input, Static, Pretty, TabbedContent
 
 from liteagent import AssistantMessage, UserMessage, ToolRequest, Agent, ToolMessage, Tool
 from liteagent.internal.memoized import ContentStream
@@ -273,37 +272,6 @@ class ChatView(VerticalScroll):
                     self.run_worker(process_result(message))
 
 
-class ChatWidget(Container):
-    def __init__(self, agent: Agent, logo: str, theme: str) -> None:
-        super().__init__()
-        self._agent = agent
-        self._session = agent.stateful()
-        self._logo = logo
-        self.theme = theme
-
-    def compose(self) -> ComposeResult:
-        with ChatView(self._agent):
-            from art import text2art
-            yield Static(text2art(self._logo, font='tarty2'), id="chat-art")
-        yield Input(placeholder="How can I help you?")
-
-    def on_mount(self) -> None:
-        self.query_one(Input).focus()
-
-    @on(Input.Submitted)
-    def on_input(self, event: Input.Submitted) -> None:
-        chat_view = self.query_one(ChatView)
-        event.input.clear()
-        prompt = event.value
-        chat_view.mount(UserMessageWidget(prompt))
-        self.run_worker(self.inference(prompt))
-        self.query_one(Input).focus()
-
-    async def inference(self, prompt: str):
-        chat_view = self.query_one(ChatView)
-        await chat_view.process(self._session(prompt), False)
-
-
 class ChatApp(App):
     CSS = """
     MyApp {
@@ -469,7 +437,11 @@ class ChatApp(App):
 
     async def inference(self, prompt: str):
         chat_view = self.query_one(ChatView)
-        await chat_view.process(self._session(prompt), False)
+        await chat_view.process(self.send(prompt), False)
+
+    async def send(self, prompt: str) -> AsyncIterator[Message]:
+        async for message in self._session(prompt):
+            yield message
 
     async def monitor_blocking(self, threshold=0.1):
         import asyncio

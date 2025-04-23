@@ -3,8 +3,7 @@ import functools
 import inspect
 import threading
 from functools import wraps
-from typing import Any, Callable
-from typing import Awaitable
+from typing import Awaitable, Callable, Any
 
 
 def as_coroutine[T](func: Callable[..., T]) -> Callable[..., Awaitable[T]]:
@@ -32,12 +31,16 @@ def as_coroutine[T](func: Callable[..., T]) -> Callable[..., Awaitable[T]]:
 
 
 def isolated_loop(fn: Callable[..., Any]):
-    """Decorator that runs an async function or async generator in a separate thread with its own event loop."""
+    """Decorator that runs an async function or async generator on a dedicated, persistent event loop."""
+
+    # Create a persistent loop in its own thread (once per decorated function)
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         if inspect.isasyncgenfunction(fn):
-            # It's an async generator — yield items through a queue
             queue: asyncio.Queue = asyncio.Queue()
             done = asyncio.Event()
 
@@ -48,13 +51,8 @@ def isolated_loop(fn: Callable[..., Any]):
                 finally:
                     done.set()
 
-            def thread_main():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(forward())
-                loop.close()
-
-            threading.Thread(target=thread_main, daemon=True).start()
+            # Submit to per-decorator loop
+            asyncio.run_coroutine_threadsafe(forward(), loop)
 
             async def stream():
                 while not (done.is_set() and queue.empty()):
@@ -67,17 +65,10 @@ def isolated_loop(fn: Callable[..., Any]):
             return stream()
 
         else:
-            # It's a regular async function — run and return result
             async def coro():
                 return await fn(*args, **kwargs)
 
-            def run():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                result = loop.run_until_complete(coro())
-                loop.close()
-                return result
-
-            return asyncio.to_thread(run)
+            future = asyncio.run_coroutine_threadsafe(coro(), loop)
+            return asyncio.wrap_future(future)
 
     return wrapper

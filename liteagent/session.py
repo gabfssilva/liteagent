@@ -1,7 +1,6 @@
 from typing import AsyncIterator, List
 
 from .agent import Agent
-from .internal.as_coroutine import isolated_loop
 from .logger import log
 from .message import Message, UserMessage, MessageContent, AssistantMessage, ToolMessage, ToolRequest
 
@@ -71,7 +70,6 @@ class Session:
         session_logger = log.bind(agent=self.agent.name, session_id=id(self))
         session_logger.info("session_called")
 
-        @isolated_loop
         async def stream_and_track():
             session_logger.debug("wrapping_user_input")
             user_input = self._wrap_user_input(*content, **kwargs)

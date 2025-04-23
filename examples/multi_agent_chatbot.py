@@ -3,12 +3,12 @@ from typing import List, TypedDict
 
 from liteagent import agent, chat
 from liteagent.providers import openai, deepseek
-from liteagent.tools import duckduckgo, wikipedia, crawl4ai
+from liteagent.tools import duckduckgo, wikipedia, browser
 
 
 @agent(
     provider=openai(model="gpt-4.1-mini"),
-    tools=[duckduckgo, wikipedia.search, wikipedia.get_complete_article, crawl4ai],
+    tools=[duckduckgo, wikipedia.search, wikipedia.get_complete_article, browser],
     description="""
         Research agent specialized in conducting thorough, source-backed investigations.
         Always use tools to verify claims and retrieve the most current and credible information.
