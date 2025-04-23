@@ -233,7 +233,6 @@ class Agent[Out]:
 
         async for message in response:
             agent_logger.debug("received_message", role=message.role, message_type=type(message.content).__name__)
-            yield message
 
             match message:
                 case AssistantMessage(content=ToolRequest(
@@ -241,6 +240,13 @@ class Agent[Out]:
                     name=name,
                     arguments=arguments
                 )):
+                    yield AssistantMessage(content=ToolRequest(
+                        id=tool_id,
+                        name=name,
+                        arguments=arguments,
+                        tool=self._tools.get(name, None)
+                    ))
+
                     execution_count = self.execution_count(messages, name)
                     agent_logger.info("tool_requested", tool=name, tool_id=tool_id, execution_count=execution_count)
 
@@ -250,22 +256,20 @@ class Agent[Out]:
 
                     async def tool_msg(tool_id, name, arguments):
                         agent_logger.debug("running_tool", tool=name, tool_id=tool_id)
-                        result = await self._run_tool(ToolRequest(
+                        tool_message = await self._run_tool(ToolRequest(
                             id=tool_id,
                             name=name,
                             arguments=arguments
                         ))
                         agent_logger.debug("tool_execution_complete", tool=name, tool_id=tool_id,
-                                           result_type=type(result).__name__)
-                        return ToolMessage(
-                            id=tool_id,
-                            content=result,
-                            name=name,
-                        )
+                                           result_type=type(tool_message.content).__name__)
+                        return tool_message
 
                     answers.append(promise(message))
                     answers.append(tool_msg(tool_id, name, arguments))
                 case _:
+                    yield message
+
                     if not self.respond_as or (type(message.content) == self.respond_as):
                         agent_logger.debug("valid_response_received", content_type=type(message.content).__name__)
                         received.append(message)
@@ -283,7 +287,7 @@ class Agent[Out]:
             async for response in self._call(messages + received + answers_list):
                 yield response
 
-    async def _run_tool(self, tool_request: ToolRequest):
+    async def _run_tool(self, tool_request: ToolRequest) -> ToolMessage:
         agent_logger = log.bind(agent=self.name)
         agent_logger.debug("run_tool_called", tool=tool_request.name)
 
@@ -299,7 +303,13 @@ class Agent[Out]:
         try:
             result = await chosen_tool(**args)
             agent_logger.debug("tool_execution_successful", tool=tool_request.name)
-            return result
+
+            return ToolMessage(
+                id=tool_request.id,
+                name=tool_request.name,
+                content=result,
+                tool=chosen_tool
+            )
         except Exception as e:
             agent_logger.error("tool_execution_failed", tool=tool_request.name, error=str(e),
                                error_type=type(e).__name__)
@@ -334,6 +344,7 @@ class Agent[Out]:
 
             agent_logger.debug("starting_call")
             async for m in self._call(message_list):
+                m.agent = self.name
                 yield m
 
         agent_logger.debug("starting_intercept")

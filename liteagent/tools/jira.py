@@ -170,6 +170,13 @@ class JiraTools(Tools):
         """
         return self.client.user_find_by_user_string(query=query)
 
+    @tool(emoji="🔍")
+    def search_projects(self, names: list[str]):
+        """
+        Search for projects based on their names.
+        """
+        self.client.get_all_projects()
+
 
 @depends_on({
     "atlassian": "atlassian-python-api"

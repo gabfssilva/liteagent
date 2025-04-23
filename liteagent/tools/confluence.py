@@ -1,4 +1,6 @@
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Literal
+
+from pydantic import Field
 
 if TYPE_CHECKING:
     from atlassian import Confluence
@@ -133,6 +135,28 @@ class ConfluenceTools(Tools):
         """
         return self.client.get(f"/rest/api/user?accountId={account_id}")
 
+    @tool(emoji='📋')
+    def search_spaces_by_name(
+        self,
+        space_type: Literal['global', 'personal'] | None = Field(..., description="Space type. If none, defaults to 'global'."),
+        space_status: Literal['current', 'archived'] | None = Field(..., description="Space status. If none, defaults to 'current'."),
+        contains_one_of: list[str] = Field(..., description="A list of strings that will be used to filter the spaces by name."),
+    ):
+        """ Retrieve information about spaces based on their name. """
+
+        result = []
+
+        for space in self.client.get_all_spaces(
+            limit=1000,
+            space_type=space_type,
+            space_status=space_status,
+            expand='description.plain',
+        )['results']:
+            for has in contains_one_of:
+                if has.lower() in space['name'].lower():
+                    result.append(space)
+
+        return result
 
 @depends_on({
     "atlassian": "atlassian-python-api"

@@ -3,7 +3,7 @@ import asyncio
 from pydantic import BaseModel
 
 from liteagent import agent, tool
-from liteagent.providers import github, ollama, deepseek
+from liteagent.providers import openai
 
 
 class Person(BaseModel):
@@ -27,7 +27,7 @@ def personal_info() -> Person: return Person(
 
 
 @agent(
-    provider=deepseek(),
+    provider=openai(),
     tools=[personal_info]
 )
 async def hello_agent() -> str: ...

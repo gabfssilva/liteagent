@@ -5,7 +5,7 @@ from . import wikipedia
 from .http_decorator import http
 from .openalex import openalex
 from .duckduckgo import duckduckgo
-from .crawl4ai import crawl4ai
+# from .crawl4ai import crawl4ai
 from .memoria import memoria
 from .openmeteo import openmeteo
 from .pdf import read_pdf_from_url
@@ -26,6 +26,8 @@ from .scopus import scopus
 from .web_of_science import web_of_science
 from .confluence import confluence
 from .jira import jira
+from .files import files
+from .browser import browser
 
 __all__ = [
     'openalex',
@@ -55,5 +57,7 @@ __all__ = [
     'scopus',
     'web_of_science',
     'confluence',
-    'jira'
+    'jira',
+    'files',
+    'browser'
 ]

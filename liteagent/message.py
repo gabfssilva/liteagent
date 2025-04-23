@@ -5,6 +5,7 @@ from typing import Literal, Iterator
 
 from pydantic import BaseModel, JsonValue
 
+from liteagent import Tool
 from liteagent.internal.memoized import ContentStream
 
 
@@ -22,6 +23,7 @@ class ToolRequest:
     name: str
     arguments: dict | list | str
     origin: Literal["local", "model"] = "model"
+    tool: Tool | None = field(default=None)
 
 
 @dataclass
@@ -50,6 +52,7 @@ Role = Literal["user", "assistant", "system", "tool"]
 class Message:
     role: Role
     content: MessageContent
+    agent: str | None = field(init=False, default=None)
 
     def __post_init__(self):
         if isinstance(self.content, ContentStream):
@@ -75,7 +78,7 @@ class Message:
                 return asdict(dt)
             case dict() as dict_value:
                 return {k: await Message._as_json(v) for k, v in dict_value.items()}
-            case str() | int() | float() | bool() as json_value:
+            case str() | int() | float() | bool() | None as json_value:
                 return json_value
             case list() as items:
                 return [await Message._as_json(item) for item in items]
@@ -124,6 +127,7 @@ class ToolMessage(Message):
     name: str
     content: MessageContent | ExecutionError
     role: Literal['tool'] = field(init=False, default="tool")
+    tool: Tool
 
     async def acontent(self) -> MessageContent:
         match await super().acontent():

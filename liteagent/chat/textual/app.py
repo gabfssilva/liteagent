@@ -1,16 +1,19 @@
 import asyncio
 import json
+import re
 from typing import AsyncIterable
 
+import textual.visual
 from pydantic import JsonValue
 from rich.errors import MarkupError
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Container, VerticalScroll
+from textual.content import Content
 from textual.reactive import reactive, var
-from textual.widgets import Markdown, Input, Static, Pretty, TabbedContent
+from textual.widgets import Markdown, Input, Static, Pretty, TabbedContent, Tooltip
 
-from liteagent import AssistantMessage, UserMessage, ToolRequest, Agent, ToolMessage
+from liteagent import AssistantMessage, UserMessage, ToolRequest, Agent, ToolMessage, Tool
 from liteagent.internal.memoized import ContentStream
 from liteagent.message import ExecutionError, Message
 
@@ -57,10 +60,16 @@ class UserMessageWidget(Static):
 
 
 class AssistantMessageWidget(Static):
-    def __init__(self, classes: str = "assistant-message", refresh_rate: float = 0.5):
+    def __init__(
+        self,
+        name: str,
+        classes: str = "assistant-message",
+        refresh_rate: float = 0.5,
+    ):
         super().__init__(classes=classes)
         self.markdown = AppendableMarkdown(content="", refresh_rate=refresh_rate)
         self.border_title = "🤖"
+        self.border_subtitle = name
 
     def compose(self) -> ComposeResult:
         yield self.markdown
@@ -139,19 +148,21 @@ class ToolUseWidget(Static):
     def __init__(
         self,
         id: str,
-        name: str,
-        emoji: str,
-        description: str,
         arguments: dict,
+        tool: Tool,
         classes: str = "tool-message"
     ):
         super().__init__(id=id, classes=classes)
-        self.tool_name = name
-        self.tool_emoji = emoji
+        self.tool_name = self._camel_to_words(tool.name.replace("__", ": ").replace("_", " ")).title()
+        self.tool_emoji = tool.emoji
         self.tool_args = arguments
-        self.set_styles(border_title=emoji)
+        self.set_styles(border_title=tool.emoji)
         self.border_title = f"{self.tool_emoji} {self.tool_name} ⚪"
-        self.tooltip = description
+        self.tooltip = Content.from_text(tool.description, markup=False)
+
+    @staticmethod
+    def _camel_to_words(text: str) -> str:
+        return re.sub(r'(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])', ' ', text)
 
     def compose(self) -> ComposeResult:
         with TabbedContent("Arguments", "Result"):
@@ -197,16 +208,6 @@ class ToolUseWidget(Static):
         await result.append(f"""```json\n{json.dumps(chunk, indent=2)}\n```""")
 
 
-class AgentRedirectionWidget(Static):
-    def __init__(self, to_agent: str):
-        super().__init__(classes="assistant-message")
-        self.markdown = AppendableMarkdown(content=f"▷ {to_agent}:\n", refresh_rate=1)
-        self.border_title = "🤖"
-
-    def compose(self) -> ComposeResult:
-        yield self.markdown
-
-
 class ChatView(VerticalScroll):
     def __init__(self, agent: Agent, id: str = None):
         super().__init__(id=id)
@@ -220,14 +221,14 @@ class ChatView(VerticalScroll):
 
                 case AssistantMessage(content=ContentStream() as stream):
                     assistant_widget = AssistantMessageWidget(
-                        "assistant-message" if not inner else "assistant-message-inner",
-                        1 if inner else 1 / 30
+                        message.agent.replace("_", " ").title(),
+                        "assistant-message" if not inner else "assistant-message-inner", 1 if inner else 1 / 30
                     )
 
                     await self.mount(assistant_widget)
 
-                    async def append_stream(stream: ContentStream):
-                        async for chunk in stream:
+                    async def append_stream(s: ContentStream):
+                        async for chunk in s:
                             await assistant_widget.markdown.append(chunk)
 
                         assistant_widget.markdown.finish()
@@ -235,45 +236,41 @@ class ChatView(VerticalScroll):
                     self.run_worker(append_stream(stream))
 
                 case AssistantMessage(content=ToolRequest() as tool_request) if "_redirection" in tool_request.name:
-                    tool_widget = CollapsibleChatView(
+                    await self.mount(CollapsibleChatView(
                         f"{tool_request.name}_{tool_request.id}",
                         tool_request.name,
                         tool_request.arguments,
                         self._agent,
                         classes="tool-message-inner" if inner else "tool-message",
-                    )
-
-                    await self.mount(tool_widget)
+                    ))
 
                 case AssistantMessage(content=ToolRequest() as tool_request):
-                    tool = self._agent.tool_by_name(tool_request.name)
-                    emoji = '🔧' if not tool else tool.emoji
-
-                    tool_widget = ToolUseWidget(f"{tool_request.name}_{tool_request.id}", tool_request.name, emoji,
-                                                tool.description,
-                                                tool_request.arguments,
-                                                "tool-message" if not inner else "tool-message-inner")
-                    await self.mount(tool_widget)
+                    await self.mount(ToolUseWidget(
+                        f"{tool_request.name}_{tool_request.id}",
+                        tool_request.arguments,
+                        tool_request.tool,
+                        "tool-message" if not inner else "tool-message-inner"
+                    ))
 
                 case ToolMessage(content=ContentStream()) as tool_message if "_redirection" in tool_message.name:
                     widget = self.query_one(f"#{tool_message.name}_{tool_message.id}", CollapsibleChatView)
                     self.run_worker(widget.process(tool_message.content))
 
                 case ToolMessage() as message:
-                    async def process_result():
-                        widget = self.query_one(f"#{message.name}_{message.id}", ToolUseWidget)
+                    async def process_result(m):
+                        tool_use_widget = self.query_one(f"#{m.name}_{m.id}", ToolUseWidget)
 
-                        result = await message.content_as_json()
-                        is_error = isinstance(message.content, ExecutionError)
+                        result = await m.content_as_json()
+                        is_error = isinstance(m.content, ExecutionError)
 
                         if isinstance(result, str):
-                            await widget.append_result(result)
+                            await tool_use_widget.append_result(result)
                         else:
-                            await widget.append_json(result)
+                            await tool_use_widget.append_json(result)
 
-                        widget.complete(is_error)
+                        tool_use_widget.complete(is_error)
 
-                    self.run_worker(process_result())
+                    self.run_worker(process_result(message))
 
 
 class ChatWidget(Container):
@@ -360,7 +357,7 @@ class ChatApp(App):
     .user-message {
         margin: 0 10 1 0;
         align: left middle;
-        border: solid $secondary;
+        border: round $secondary;
         background: $background;
         padding: 1;
     }
@@ -368,7 +365,7 @@ class ChatApp(App):
     .assistant-message {
         margin: 0 0 1 10;
         align: right middle;
-        border: solid $secondary;
+        border: round $secondary;
         background: $background;
         padding: 1;
         color: $foreground-darken-3;
@@ -377,7 +374,7 @@ class ChatApp(App):
     .assistant-message-inner {
         margin: 0 0 1 0;
         align: left middle;
-        border: solid $secondary;
+        border: round $secondary;
         background: $background;
         padding: 1;
     }
@@ -385,14 +382,14 @@ class ChatApp(App):
     .tool-message {
         margin: 0 0 1 10;
         align: right middle;
-        border: solid $accent;
+        border: round $accent;
         background: $background;
     }
     
     .tool-message-inner {
         margin: 0 0 1 0;
         align: left middle;
-        border: solid $accent;
+        border: round $accent;
         background: $background;
     }
     
@@ -405,7 +402,7 @@ class ChatApp(App):
     }
     
     CollapsibleChatView Collapsible {
-        # border: solid $accent;
+        # border: round $accent;
         background: $background;
         padding: 0;
     }
