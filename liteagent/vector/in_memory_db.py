@@ -1,4 +1,4 @@
-from typing import List, AsyncIterator
+from typing import List, AsyncIterable
 import numpy as np
 from fastembed import TextEmbedding
 
@@ -16,14 +16,14 @@ class InMemory(VectorDatabase):
         self.vectors = []
         self.chunks = []
 
-    async def store(self, documents: AsyncIterator[Document]):
+    async def store(self, documents: AsyncIterable[Document]):
         async for doc in documents:
             embedding = await self.tokenizer.encode(doc.content)
             chunk = Chunk(content=doc.content, metadata=doc.metadata)
             self.vectors.append(embedding)
             self.chunks.append(chunk)
 
-    async def search(self, query: str, k: int = 1) -> AsyncIterator[Chunk]:
+    async def search(self, query: str, k: int = 1) -> AsyncIterable[Chunk]:
         query_embedding = await self.tokenizer.encode(query)
         similarities = [self._cosine_similarity(query_embedding, v) for v in self.vectors]
         nearest_indices = np.argsort(similarities)[-k:][::-1]

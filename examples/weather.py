@@ -1,7 +1,7 @@
 import asyncio
 
 from liteagent import agent
-from liteagent.providers import gemini, openai
+from liteagent.providers import google, openai
 from liteagent.tools import openmeteo
 
 

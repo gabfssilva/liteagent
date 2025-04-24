@@ -3,7 +3,7 @@ import asyncio
 from pydantic import BaseModel
 
 from liteagent import agent, tool
-from liteagent.providers import openai
+from liteagent.providers import openai, ollama, anthropic, google
 
 
 class Person(BaseModel):
@@ -27,11 +27,11 @@ def personal_info() -> Person: return Person(
 
 
 @agent(
-    provider=openai(),
+    provider=google(),
     tools=[personal_info]
 )
 async def hello_agent() -> str: ...
 
 
 if __name__ == "__main__":
-    print(asyncio.run(hello_agent("who am I?")))
+    print(asyncio.run(hello_agent("based on personal_info, who am I?")))

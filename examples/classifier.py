@@ -1,5 +1,5 @@
 import asyncio
-from typing import Literal, AsyncIterator, Iterable, List
+from typing import Literal, AsyncIterable, Iterable, List
 
 from pydantic import BaseModel
 from rich import box
@@ -8,7 +8,7 @@ from rich.live import Live
 from rich.table import Table, Column
 
 from liteagent import agent
-from liteagent.providers import gemini
+from liteagent.providers import google
 
 Sentiment = Literal["positive", "negative", "neutral"]
 
@@ -23,12 +23,12 @@ class ReviewResult(BaseModel):
     sentiment: Sentiment
     flags: List[Flag]
 
-async def review_classifier(reviews: Iterable[str]) -> AsyncIterator[ReviewResult]:
-    @agent(provider=gemini(), intercept=None)
+async def review_classifier(reviews: Iterable[str]) -> AsyncIterable[ReviewResult]:
+    @agent(provider=google(), intercept=None)
     async def sentiment_classifier(comment: str) -> Sentiment:
         """Evaluate the comment and categorize it: {comment}"""
 
-    @agent(provider=gemini(), intercept=None)
+    @agent(provider=google(), intercept=None)
     async def flag_classifier(comment: str) -> List[Flag]:
         """Evaluate the comment and flag it: {comment}"""
 

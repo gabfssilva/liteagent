@@ -1,6 +1,6 @@
 try:
-    from .provider import Claude, claude
+    from .provider import Anthropic, anthropic
 
-    __all__ = ["Claude", "claude"]
+    __all__ = ["Anthropic", "anthropic"]
 except ImportError:
     __all__ = []

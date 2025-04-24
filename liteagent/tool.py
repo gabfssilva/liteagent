@@ -4,7 +4,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import partial
-from typing import List, AsyncIterator, Any, Coroutine, overload
+from typing import List, AsyncIterable, Any, Coroutine, overload
 from typing import Type, Callable, Awaitable, Protocol, runtime_checkable
 
 from pydantic import BaseModel, JsonValue, create_model
@@ -14,7 +14,7 @@ from liteagent.logger import log
 
 Out = str | dict | BaseModel | Coroutine[Any, Any, 'Out']
 
-Handler = Callable[..., Out | Awaitable[Out | AsyncIterator[Out]] | AsyncIterator[Out]]
+Handler = Callable[..., Out | Awaitable[Out | AsyncIterable[Out]] | AsyncIterable[Out]]
 
 
 class ToolDef(ABC):
@@ -275,7 +275,7 @@ class AgentDispatcherTool(Tool):
         self.input = self._create_input_model()
         self.handler = self._dispatch
 
-    async def _dispatch(self, *args, **kwargs) -> AsyncIterator['Message']:
+    async def _dispatch(self, *args, **kwargs) -> AsyncIterable['Message']:
         args = filter(lambda arg: arg is not self, args)
         return await self.agent(*list(args), stream=True, **kwargs)
 

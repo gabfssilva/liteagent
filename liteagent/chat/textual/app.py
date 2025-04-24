@@ -2,7 +2,7 @@ import asyncio
 import json
 import re
 import time
-from typing import AsyncIterable, AsyncIterator
+from typing import AsyncIterable, AsyncIterable
 
 from pydantic import JsonValue
 from rich.errors import MarkupError
@@ -14,7 +14,7 @@ from textual.reactive import reactive, var
 from textual.widgets import Markdown, Input, Static, Pretty, TabbedContent
 
 from liteagent import AssistantMessage, UserMessage, ToolRequest, Agent, ToolMessage, Tool, AgentDispatcherTool
-from liteagent.internal.memoized import ContentStream
+from liteagent.internal.memoized import MemoizedAsyncIterable
 from liteagent.message import ExecutionError, Message
 
 
@@ -253,7 +253,7 @@ class ChatView(VerticalScroll):
                 case UserMessage():
                     pass
 
-                case AssistantMessage(content=ContentStream() as stream):
+                case AssistantMessage(content=MemoizedAsyncIterable() as stream):
                     assistant_widget = AssistantMessageWidget(
                         message.agent.replace("_", " ").title(),
                         "assistant-message" if not inner else "assistant-message-inner", 1 if inner else 1 / 30
@@ -261,7 +261,7 @@ class ChatView(VerticalScroll):
 
                     await self.mount(assistant_widget)
 
-                    async def append_stream(s: ContentStream):
+                    async def append_stream(s: MemoizedAsyncIterable):
                         async for chunk in s:
                             await assistant_widget.markdown.append(chunk)
 
@@ -475,7 +475,7 @@ class ChatApp(App):
         chat_view = self.query_one(ChatView)
         await chat_view.process(self.send(prompt), False)
 
-    async def send(self, prompt: str) -> AsyncIterator[Message]:
+    async def send(self, prompt: str) -> AsyncIterable[Message]:
         async for message in self._session(prompt):
             yield message
 

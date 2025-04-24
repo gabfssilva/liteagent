@@ -1,7 +1,7 @@
 import asyncio
 import json
 import uuid
-from typing import AsyncIterator, Type
+from typing import AsyncIterable, Type, AsyncIterable
 
 from openai import AsyncOpenAI, NOT_GIVEN
 from openai.lib.streaming.chat import FunctionToolCallArgumentsDoneEvent, ContentDoneEvent, ChunkEvent
@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from liteagent import Tool
 from liteagent.internal.cleanup import register_provider
-from liteagent.internal.memoized import ContentStream
+from liteagent.internal.memoized import MemoizedAsyncIterable
 from liteagent.logger import log
 from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, ImageURL, ImageBase64, \
     MessageContent
@@ -38,7 +38,7 @@ class OpenAICompatible(Provider):
         messages: list[Message],
         tools: list[Tool],
         respond_as: Type,
-    ) -> AsyncIterator[Message]:
+    ) -> AsyncIterable[Message]:
         provider_logger = log.bind(provider=self.name, model=self.model)
         provider_logger.info("completion_started",
                              message_count=len(messages),
@@ -174,12 +174,12 @@ class OpenAICompatible(Provider):
                 raise ValueError(f"Invalid message type: {type(message)}")
 
     @staticmethod
-    async def _as_messages(stream) -> AsyncIterator[Message]:
+    async def _as_messages(stream) -> AsyncIterable[Message]:
         stream_logger = log.bind(provider="openai", method="_as_messages")
         stream_logger.debug("creating_message_stream")
 
-        message_stream: ContentStream[Message] = ContentStream[Message]()
-        assistant_stream: ContentStream | None = None
+        message_stream: MemoizedAsyncIterable[Message] = MemoizedAsyncIterable[Message]()
+        assistant_stream: MemoizedAsyncIterable | None = None
         event_count = 0
         content_events = 0
         tool_events = 0
@@ -203,7 +203,7 @@ class OpenAICompatible(Provider):
 
                             if not assistant_stream:
                                 stream_logger.debug("creating_assistant_stream")
-                                assistant_stream = ContentStream[str]()
+                                assistant_stream = MemoizedAsyncIterable[str]()
                                 await assistant_stream.emit(content)
                                 stream_logger.debug("emitting_first_assistant_message")
                                 await message_stream.emit(AssistantMessage(content=assistant_stream))
@@ -263,7 +263,7 @@ class OpenAICompatible(Provider):
         asyncio.create_task(consume())
         stream_logger.debug("stream_task_created")
 
-        return message_stream.iterator()
+        return message_stream
 
 
 @register_provider

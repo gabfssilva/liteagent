@@ -1,4 +1,4 @@
-from typing import AsyncIterator, List
+from typing import AsyncIterable, List
 
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http.models import Distance, VectorParams, PointStruct
@@ -55,7 +55,7 @@ class Qdrant(VectorDatabase):
             dimension=dimension
         )
 
-    async def store(self, documents: AsyncIterator[Document]):
+    async def store(self, documents: AsyncIterable[Document]):
         """Store documents in Qdrant"""
         batch = []
 
@@ -81,7 +81,7 @@ class Qdrant(VectorDatabase):
         if batch:
             await self._upsert_batch(batch)
 
-    async def search(self, text: str, k: int) -> AsyncIterator[Chunk]:
+    async def search(self, text: str, k: int) -> AsyncIterable[Chunk]:
         """Search for similar documents in Qdrant"""
         # Generate query embedding
         query_embedding = await self.tokenizer.encode(text)

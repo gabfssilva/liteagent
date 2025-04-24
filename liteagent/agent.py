@@ -2,7 +2,7 @@ import asyncio
 import itertools
 import time
 from inspect import Signature
-from typing import Callable, List, AsyncIterator, Type, Literal, overload
+from typing import Callable, List, AsyncIterable, Type, Literal, overload
 
 from pydantic import BaseModel
 
@@ -13,11 +13,11 @@ from .message import Message, UserMessage, AssistantMessage, ToolRequest, ToolMe
 from .prompts import TOOL_AGENT_PROMPT
 from .tool import Tool, ToolDef
 
-AsyncInterceptor = Callable[['Agent', AsyncIterator[Message]], AsyncIterator[Message]]
+AsyncInterceptor = Callable[['Agent', AsyncIterable[Message]], AsyncIterable[Message]]
 
 ResponseMode = Literal["stream", "list", "last"] | Callable[[Message], bool]
 
-AgentResponse = BaseModel | Message | List[Message] | AsyncIterator[Message]
+AgentResponse = BaseModel | Message | List[Message] | AsyncIterable[Message]
 
 
 class Wrapped[T](BaseModel):
@@ -72,7 +72,7 @@ class Agent[Out]:
             self.respond_as = Wrapped[respond_as]
             self.respond_as.__name__ = "Out"
         else:
-            self.respond_as = AsyncIterator[Message]
+            self.respond_as = AsyncIterable[Message]
             self.respond_as_wrapped = False
 
         self.system_message = system_message
@@ -169,7 +169,7 @@ class Agent[Out]:
         *content: MessageContent | Message,
         stream: Literal[True],
         **kwargs
-    ) -> AsyncIterator[Message]:
+    ) -> AsyncIterable[Message]:
         ...
 
     async def __call__(
@@ -177,7 +177,7 @@ class Agent[Out]:
         *content: MessageContent | Message,
         stream: bool = False,
         **kwargs,
-    ) -> Out | AsyncIterator[Message]:
+    ) -> Out | AsyncIterable[Message]:
         agent_logger = log.bind(agent=self.name)
         agent_logger.info("agent_called", stream=stream)
 
@@ -193,7 +193,7 @@ class Agent[Out]:
         agent_logger.debug("processing_stream_to_output")
         return await self._stream_to_out(stream_messages)
 
-    async def _intercept(self, iterator: AsyncIterator[Message]) -> AsyncIterator[Message]:
+    async def _intercept(self, iterator: AsyncIterable[Message]) -> AsyncIterable[Message]:
         if not self.intercept:
             async for message in iterator:
                 yield message
@@ -202,12 +202,12 @@ class Agent[Out]:
                 yield message
 
     def _respond_as(self):
-        if not self.respond_as or self.respond_as == str or self.respond_as == AsyncIterator[Message]:
+        if not self.respond_as or self.respond_as == str or self.respond_as == AsyncIterable[Message]:
             return None
 
         return self.respond_as
 
-    async def _call(self, messages: List[Message]) -> AsyncIterator[Message]:
+    async def _call(self, messages: List[Message]) -> AsyncIterable[Message]:
         agent_logger = log.bind(agent=self.name)
         agent_logger.debug("calling_provider", messages_count=len(messages), tools_count=len(self._all_tools))
 
@@ -313,11 +313,11 @@ class Agent[Out]:
                                error_type=type(e).__name__)
             raise
 
-    async def _intercepted_call(self, messages: List[Message]) -> AsyncIterator[Message]:
+    async def _intercepted_call(self, messages: List[Message]) -> AsyncIterable[Message]:
         agent_logger = log.bind(agent=self.name)
         agent_logger.debug("intercepted_call_started")
 
-        async def inner() -> AsyncIterator[Message]:
+        async def inner() -> AsyncIterable[Message]:
             agent_logger.debug("preparing_eager_tools")
             eagerly_invoked = await self._eagerly_invoked_tools()
             agent_logger.debug("eager_tools_executed", count=len(eagerly_invoked) // 2)
@@ -349,12 +349,12 @@ class Agent[Out]:
         async for m in self._intercept(inner()):
             yield m
 
-    async def _stream_to_out(self, stream: AsyncIterator[Message]) -> Out:
+    async def _stream_to_out(self, stream: AsyncIterable[Message]) -> Out:
         agent_logger = log.bind(agent=self.name)
         agent_logger.debug("stream_to_out_started",
                            respond_as=getattr(self.respond_as, "__name__", str(self.respond_as)))
 
-        if self.respond_as == AsyncIterator[Message]:
+        if self.respond_as == AsyncIterable[Message]:
             agent_logger.debug("returning_stream_directly")
             return stream
 

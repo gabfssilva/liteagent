@@ -4,7 +4,7 @@ from liteagent.internal import audit, as_coroutine
 
 os.environ['TOKENIZERS_PARALLELISM'] = 'False'
 
-from typing import AsyncIterator, List, Union
+from typing import AsyncIterable, List, Union
 
 import chromadb
 from chromadb.api.models import AsyncCollection
@@ -31,7 +31,7 @@ class Chroma(VectorDatabase):
 
         return cls(collection=collection)
 
-    async def store(self, documents: AsyncIterator[Document]):
+    async def store(self, documents: AsyncIterable[Document]):
         batch = []
 
         async for document in documents:
@@ -44,7 +44,7 @@ class Chroma(VectorDatabase):
         if batch:
             await self._upsert_batch(batch)
 
-    async def search(self, query: str, k: int) -> AsyncIterator[Chunk]:
+    async def search(self, query: str, k: int) -> AsyncIterable[Chunk]:
         result = await self.collection.query(query_texts=query, n_results=k)
 
         for chunk in zip(result['documents'], result['metadatas'], result['distances']):
@@ -79,7 +79,7 @@ class ChromaInMemory(VectorDatabase):
         )
         self.store_batch_size = 10
 
-    async def store(self, documents: AsyncIterator[Document]):
+    async def store(self, documents: AsyncIterable[Document]):
         batch = []
 
         async for document in documents:
@@ -92,7 +92,7 @@ class ChromaInMemory(VectorDatabase):
         if batch:
             await self._upsert_batch(batch)
 
-    async def search(self, query: str, k: int) -> AsyncIterator[Chunk]:
+    async def search(self, query: str, k: int) -> AsyncIterable[Chunk]:
         results = await self._query(query, k)
 
         for i in range(len(results['ids'][0])):

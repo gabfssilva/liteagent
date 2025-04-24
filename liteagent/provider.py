@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import AsyncIterator, Type
+from typing import AsyncIterable, Type
 
 from .message import Message
 from .tool import Tool
@@ -12,14 +12,14 @@ class Provider:
             setattr(self, key, value)
 
     @abstractmethod
-    async def completion(
+    def completion(
         self,
         messages: list[Message],
         tools: list[Tool],
         respond_as: Type,
-    ) -> AsyncIterator[Message]:
+    ) -> AsyncIterable[Message]:
         raise NotImplementedError
-        
+
     async def destroy(self):
         """
         Close and clean up any resources held by this provider.

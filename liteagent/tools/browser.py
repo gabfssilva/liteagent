@@ -1,6 +1,6 @@
 import asyncio
 import random
-from typing import Optional, Literal
+from typing import Optional, TypedDict, Literal, Union
 
 from playwright.async_api import async_playwright, Page, Browser as PWBrowser
 
@@ -305,60 +305,76 @@ class Browser(Tools):
         await self._ensure_active_page()
         return await self.context.cookies()
 
-    @tool(emoji='⏳')
-    async def wait_for(
-        self,
-        condition_type: Literal[
-            "selector", "not_selector", "url_contains", "title_contains",
-            "network_idle", "timeout", "js_condition"
-        ],
-        condition: str,
-        timeout_ms: int = 5000,
-    ) -> str:
-        """
-        Waits for a given condition:
-        - 'selector': Wait for a CSS selector to appear
-        - 'not_selector': Wait for a CSS selector to disappear
-        - 'url_contains': Wait until URL contains a substring
-        - 'title_contains': Wait until page title contains a substring
-        - 'network_idle': Wait until network is idle
-        - 'timeout': Wait a fixed amount of time (value = seconds)
-        - 'js_condition': Wait for JS expression to return true
-        """
+    @tool(emoji="⏳")
+    async def wait_for_condition(self, condition: Union[
+        TypedDict("WaitSelector", {
+            "type": Literal["selector"],
+            "selector": str,
+        }),
+        TypedDict("WaitNotSelector", {
+            "type": Literal["not_selector"],
+            "selector": str,
+        }),
+        TypedDict("WaitUrlContains", {
+            "type": Literal["url_contains"],
+            "substring": str,
+        }),
+        TypedDict("WaitTitleContains", {
+            "type": Literal["title_contains"],
+            "substring": str,
+        }),
+        TypedDict("WaitLoadState", {
+            "type": Literal["load_state"],
+            "state": Literal["load", "domcontentloaded", "networkidle", "commit"],
+        }),
+        TypedDict("WaitTimeout", {
+            "type": Literal["timeout"],
+            "seconds": float,
+        }),
+        TypedDict("WaitJsCondition", {
+            "type": Literal["js_condition"],
+            "expression": str,
+        }),
+    ], timeout_ms: int = 5000) -> str:
+        """ Awaits for the specified condition to be met. """
+
         await self._ensure_active_page()
 
         try:
-            if condition_type == "selector":
-                await self.page.wait_for_selector(condition, timeout=timeout_ms)
-                return f"Selector '{condition}' appeared."
-            elif condition_type == "not_selector":
-                await self.page.wait_for_selector(condition, timeout=timeout_ms, state="detached")
-                return f"Selector '{condition}' disappeared."
-            elif condition_type == "url_contains":
-                await self.page.wait_for_function(
-                    f"() => window.location.href.includes({repr(condition)})",
-                    timeout=timeout_ms
-                )
-                return f"URL contains '{condition}'."
-            elif condition_type == "title_contains":
-                await self.page.wait_for_function(
-                    f"() => document.title.includes({repr(condition)})",
-                    timeout=timeout_ms
-                )
-                return f"Title contains '{condition}'."
-            elif condition_type == "network_idle":
-                await self.page.wait_for_load_state("networkidle", timeout=timeout_ms)
-                return f"Network is idle."
-            elif condition_type == "timeout":
-                await asyncio.sleep(float(condition))
-                return f"Slept for {condition} seconds."
-            elif condition_type == "js_condition":
-                await self.page.wait_for_function(condition, timeout=timeout_ms)
-                return f"JS condition passed."
-            else:
-                return f"Invalid condition: {condition_type}"
+            match condition:
+                case {"type": "selector", "selector": sel}:
+                    await self.page.locator(sel).wait_for(timeout=timeout_ms, state="visible")
+                    return f"Selector '{sel}' became visible."
+
+                case {"type": "not_selector", "selector": sel}:
+                    await self.page.locator(sel).wait_for(timeout=timeout_ms, state="detached")
+                    return f"Selector '{sel}' was detached."
+
+                case {"type": "url_contains", "substring": sub}:
+                    await self.page.wait_for_function(f"() => location.href.includes({repr(sub)})", timeout=timeout_ms)
+                    return f"URL contains '{sub}'."
+
+                case {"type": "title_contains", "substring": sub}:
+                    await self.page.wait_for_function(f"() => document.title.includes({repr(sub)})", timeout=timeout_ms)
+                    return f"Title contains '{sub}'."
+
+                case {"type": "load_state", "state": state}:
+                    await self.page.wait_for_load_state(state, timeout=timeout_ms)
+                    return f"Page reached load state '{state}'."
+
+                case {"type": "timeout", "seconds": s}:
+                    await asyncio.sleep(s)
+                    return f"Slept for {s} seconds."
+
+                case {"type": "js_condition", "expression": expr}:
+                    await self.page.wait_for_function(expr, timeout=timeout_ms)
+                    return f"JavaScript condition passed."
+
+                case _:
+                    return "Invalid condition."
+
         except Exception as e:
-            return f"Timeout or error: {str(e)}"
+            return f"Error during wait: {e}"
 
     @tool(emoji='💾')
     async def get_local_storage(self) -> dict:

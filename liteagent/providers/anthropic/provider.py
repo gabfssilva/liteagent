@@ -1,5 +1,6 @@
+import asyncio
 import json
-from typing import AsyncIterator, Type
+from typing import AsyncIterable, Type
 
 from anthropic import AsyncAnthropic
 from anthropic._types import NOT_GIVEN
@@ -7,12 +8,13 @@ from pydantic import BaseModel
 
 from liteagent import Tool
 from liteagent.internal import register_provider
+from liteagent.internal.memoized import MemoizedAsyncIterable
 from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage, ImageURL, \
     ImageBase64, MessageContent
 from liteagent.provider import Provider
 
 
-class Claude(Provider):
+class Anthropic(Provider):
     name: str = "claude"
     args: dict = {}
 
@@ -31,14 +33,14 @@ class Claude(Provider):
         messages: list[Message],
         tools: list[Tool],
         respond_as: Type,
-    ) -> AsyncIterator[Message]:
+    ) -> AsyncIterable[Message]:
         tool_definitions = list(map(lambda tool: {
             "name": tool["function"]["name"],
             "description": tool["function"]["description"],
             "input_schema": tool["function"]["parameters"]
         }, map(lambda tool: tool.definition, tools))) if len(tools) > 0 else NOT_GIVEN
 
-        parsed_messages = list(map(self.map_message, messages))
+        parsed_messages = [ await self.map_message(message) for message in messages ]
 
         system = next((msg for msg in messages if isinstance(msg, SystemMessage)), None)
         system_content = system.content if system else NOT_GIVEN
@@ -52,11 +54,11 @@ class Claude(Provider):
             tools=tool_definitions,
             **self.args
         ) as stream:
-            async for event in self._as_messages(stream):
+            async for event in await self._as_messages(stream):
                 yield event
 
     @staticmethod
-    def map_message(message: Message) -> dict:
+    async def map_message(message: Message) -> dict:
         match message:
             case UserMessage(content=content):
                 def map_content(item: MessageContent) -> list[dict]:
@@ -117,25 +119,16 @@ class Claude(Provider):
                     }]
                 }
 
-            case AssistantMessage(content=BaseModel() as content):
+            case AssistantMessage() as message:
                 return {
                     "role": "assistant",
                     "content": [{
                         "type": "text",
-                        "text": content.model_dump_json()
+                        "text": await message.content_as_string()
                     }]
                 }
 
-            case AssistantMessage(content=str() as content):
-                return {
-                    "role": "assistant",
-                    "content": [{
-                        "type": "text",
-                        "text": content
-                    }]
-                }
-
-            case ToolMessage(id=id, content=content) as message:
+            case ToolMessage(id=id) as message:
                 return {
                     "role": "user",
                     "content": [{
@@ -155,40 +148,64 @@ class Claude(Provider):
                 raise ValueError(f"Invalid message type: {type(message)}")
 
     @staticmethod
-    async def _as_messages(stream) -> AsyncIterator[Message]:
-        async for event in stream:
-            match event:
-                # Match TextEvent
-                case event if hasattr(event, "type") and event.type == "text" and hasattr(event, "text"):
-                    yield AssistantMessage(content=event.text)
+    async def _as_messages(stream) -> AsyncIterable[Message]:
+        message_stream: MemoizedAsyncIterable[Message] = MemoizedAsyncIterable[Message]()
+        assistant_stream: MemoizedAsyncIterable | None = None
 
-                # Match ContentBlockStopEvent with ToolUseBlock
-                case event if (hasattr(event, "type") and event.type == "content_block_stop" and
-                               hasattr(event, "content_block") and hasattr(event.content_block, "type") and
-                               event.content_block.type == "tool_use"):
-                    tool_block = event.content_block
-                    yield AssistantMessage(
-                        content=ToolRequest(
-                            name=tool_block.name,
-                            id=tool_block.id,
-                            arguments=tool_block.input
-                        )
-                    )
+        async def consume():
+            nonlocal message_stream, assistant_stream
 
-                # Match direct tool_use events
-                case event if (hasattr(event, "type") and event.type == "tool_use" and
-                               hasattr(event, "tool_use")):
-                    yield AssistantMessage(
-                        content=ToolRequest(
-                            name=event.tool_use.name,
-                            id=event.tool_use.id,
-                            arguments=event.tool_use.input
-                        )
-                    )
+            try:
+                async for event in stream:
+                    match event:
+                        # Match TextEvent
+                        case event if hasattr(event, "type") and event.type == "text" and hasattr(event, "text"):
+                            if not assistant_stream:
+                                assistant_stream = MemoizedAsyncIterable[str]()
+                                await assistant_stream.emit(event.text)
+                                await message_stream.emit(AssistantMessage(content=assistant_stream))
+                            else:
+                                await assistant_stream.emit(event.text)
 
-                # Default case
-                case _:
-                    pass
+                        case event if (hasattr(event, "type") and event.type == "content_block_stop" and
+                                    hasattr(event, "content_block") and hasattr(event.content_block, "type") and
+                                    event.content_block.type == "tool_use"):
+                            tool_block = event.content_block
+                            await message_stream.emit(AssistantMessage(
+                                content=ToolRequest(
+                                    name=tool_block.name,
+                                    id=tool_block.id,
+                                    arguments=tool_block.input
+                                )
+                            ))
+
+                        case event if (hasattr(event, "type") and event.type == "tool_use" and
+                                    hasattr(event, "tool_use")):
+                            await message_stream.emit(AssistantMessage(
+                                content=ToolRequest(
+                                    name=event.tool_use.name,
+                                    id=event.tool_use.id,
+                                    arguments=event.tool_use.input
+                                )
+                            ))
+
+                        case _:
+                            pass
+
+                if assistant_stream:
+                    await assistant_stream.close()
+
+                await message_stream.close()
+
+            except Exception as e:
+                if assistant_stream:
+                    await assistant_stream.close()
+                await message_stream.close()
+                raise
+
+        asyncio.create_task(consume())
+
+        return message_stream
 
     async def destroy(self):
         """
@@ -200,12 +217,12 @@ class Claude(Provider):
 
 
 @register_provider
-def claude(
+def anthropic(
     client: AsyncAnthropic,
     model: str = 'claude-3-7-sonnet-20250219',
     **kwargs
 ) -> Provider:
-    return Claude(
+    return Anthropic(
         model=model,
         client=client,
         **kwargs

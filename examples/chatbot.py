@@ -1,12 +1,12 @@
 import asyncio
 
 from liteagent import agent, chat
-from liteagent.providers import openai
+from liteagent.providers import ollama
 from liteagent.tools import duckduckgo, files, terminal
 
 
 @chat.terminal(logo="Chatbot")
-@agent(provider=openai(model="gpt-4.1"), tools=[
+@agent(provider=ollama(), tools=[
     duckduckgo,
     files("/Users/gabrielfrancisco/Downloads/test"),
     terminal("/Users/gabrielfrancisco/Downloads/test")

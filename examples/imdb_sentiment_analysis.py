@@ -1,5 +1,5 @@
 import asyncio
-from typing import Literal, AsyncIterator, Iterator, Tuple
+from typing import Literal, AsyncIterable, Iterator, Tuple
 
 from datasets import load_dataset
 
@@ -14,7 +14,7 @@ Result = Tuple[Sentiment, Sentiment]
 
 async def workflow(
     data: Iterator[Review],
-) -> AsyncIterator[Result]:
+) -> AsyncIterable[Result]:
     @agent(provider=openai(), intercept=None)
     async def classifier(review: str) -> Sentiment:
         """Evaluate the following review: {review}"""

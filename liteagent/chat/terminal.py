@@ -1,12 +1,12 @@
 """Terminal-based chat interface using Textual."""
-from typing import Optional, AsyncIterator
+from typing import Optional, AsyncIterable
 
 from ..agent import Agent
 from ..message import Message
 
 
 def terminal(
-    agent_f: Optional[Agent[AsyncIterator[Message]]] = None,
+    agent_f: Optional[Agent[AsyncIterable[Message]]] = None,
     *,
     theme: str = "gruvbox",
     logo: str = None,
@@ -24,7 +24,7 @@ def terminal(
         A decorator that can be used to wrap an agent function
     """
 
-    def decorator(agent: Agent[AsyncIterator[Message]]):
+    def decorator(agent: Agent[AsyncIterable[Message]]):
         async def chat_loop():
             from .textual.app import ChatApp
 

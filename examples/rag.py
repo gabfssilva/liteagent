@@ -1,7 +1,7 @@
 import asyncio
 
 from liteagent import agent
-from liteagent.providers import openai, claude
+from liteagent.providers import openai, anthropic
 from liteagent.tools import vector_store
 from liteagent.vector import in_memory, token_chunking
 from liteagent.vector.loaders import from_url
@@ -42,7 +42,7 @@ async def main():
     )
 
     @agent(
-        provider=claude(),
+        provider=anthropic(),
         description="""
             You are a RAG agent. 
             **ALWAYS** use your vector store to look up the answer.

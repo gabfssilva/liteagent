@@ -1,6 +1,6 @@
 try:
-    from .provider import Gemini, gemini
+    from .provider import Google, google
 
-    __all__ = ["Gemini", "gemini"]
+    __all__ = ["Google", "google"]
 except ImportError:
     __all__ = []

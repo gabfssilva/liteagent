@@ -1,4 +1,4 @@
-from typing import AsyncIterator, List
+from typing import AsyncIterable, List
 
 from .agent import Agent
 from .logger import log
@@ -66,7 +66,7 @@ class Session:
         self,
         *content: MessageContent | Message,
         **kwargs,
-    ) -> AsyncIterator[Message]:
+    ) -> AsyncIterable[Message]:
         session_logger = log.bind(agent=self.agent.name, session_id=id(self))
         session_logger.info("session_called")
 

@@ -1,16 +1,18 @@
-from typing import AsyncIterator, Type
+import asyncio
+from typing import AsyncIterable, Type
 
 from pydantic import BaseModel, TypeAdapter
 
 from liteagent import Tool
 from liteagent.internal import register_provider
-from liteagent.message import ToolRequest, Message, AssistantMessage
+from liteagent.internal.memoized import MemoizedAsyncIterable
+from liteagent.message import ToolRequest, Message, AssistantMessage, ToolMessage
 from liteagent.provider import Provider
 
 from google import genai
 from google.genai import types
 
-class Gemini(Provider):
+class Google(Provider):
     name: str = "gemini"
 
     def __init__(self, client: genai.Client, model: str = "gemini-2.0-flash-exp", **kwargs):
@@ -24,15 +26,10 @@ class Gemini(Provider):
         messages: list[Message],
         tools: list[Tool] = None,
         respond_as: Type[BaseModel] = None,
-    ) -> AsyncIterator[Message]:
+    ) -> AsyncIterable[Message]:
         prompt = ""
         for message in messages:
-            if message.role.lower() == "user":
-                prompt += f"User: {message.content}\n"
-            elif message.role.lower() == "assistant":
-                prompt += f"Assistant: {message.content}\n"
-            else:
-                prompt += f"{message.role.capitalize()}: {message.content}\n"
+            prompt += f"{message.role.capitalize()}: {await message.content_as_string()}\n"
 
         tool_definitions = [self._tool_def(tool) for tool in tools] if tools else None
 
@@ -54,33 +51,71 @@ class Gemini(Provider):
             **self.args
         )
 
-        assistant_message = ""
+        async for message in await self._as_messages(stream, respond_as):
+            yield message
 
-        async for chunk in stream:
-            if hasattr(chunk, "function_calls") and chunk.function_calls:
-                for call in chunk.function_calls:
-                    yield AssistantMessage(
-                        content=ToolRequest(
-                            id=str(call.id or "0"),
-                            name=call.name,
-                            arguments=call.args,
-                        )
-                    )
+    async def _as_messages(self, stream, respond_as: Type[BaseModel] = None) -> AsyncIterable[Message]:
+        message_stream: MemoizedAsyncIterable[Message] = MemoizedAsyncIterable[Message]()
+        assistant_stream: MemoizedAsyncIterable | None = None
 
-                    return
+        async def consume():
+            nonlocal message_stream, assistant_stream
 
+            assistant_message = ""
 
-            if respond_as:
-                assistant_message = assistant_message + chunk.text
+            try:
+                async for chunk in stream:
+                    if hasattr(chunk, "function_calls") and chunk.function_calls:
+                        for call in chunk.function_calls:
+                            await message_stream.emit(AssistantMessage(
+                                content=ToolRequest(
+                                    id=str(call.id or "0"),
+                                    name=call.name,
+                                    arguments=call.args,
+                                )
+                            ))
 
-                try:
-                    parsed_content = respond_as.model_validate_json(assistant_message)
-                    yield AssistantMessage(content=parsed_content)
-                    return
-                except Exception:
-                    continue
+                        if assistant_stream:
+                            await assistant_stream.close()
+                        await message_stream.close()
+                        return
 
-            yield AssistantMessage(content=chunk.text)
+                    if respond_as:
+                        assistant_message = assistant_message + chunk.text
+
+                        try:
+                            parsed_content = respond_as.model_validate_json(assistant_message)
+                            await message_stream.emit(AssistantMessage(content=parsed_content))
+
+                            if assistant_stream:
+                                await assistant_stream.close()
+                            await message_stream.close()
+                            return
+                        except Exception:
+                            continue
+
+                    if hasattr(chunk, "text") and chunk.text:
+                        if not assistant_stream:
+                            assistant_stream = MemoizedAsyncIterable[str]()
+                            await assistant_stream.emit(chunk.text)
+                            await message_stream.emit(AssistantMessage(content=assistant_stream))
+                        else:
+                            await assistant_stream.emit(chunk.text)
+
+                if assistant_stream:
+                    await assistant_stream.close()
+
+                await message_stream.close()
+
+            except Exception as e:
+                if assistant_stream:
+                    await assistant_stream.close()
+                await message_stream.close()
+                raise e
+
+        asyncio.create_task(consume())
+
+        return message_stream
 
     def _tool_def(self, tool: Tool) -> types.FunctionDeclaration:
         return types.FunctionDeclaration(
@@ -98,8 +133,8 @@ class Gemini(Provider):
                     self._recursive_purge_dict_key(d[key], k)
 
 @register_provider
-def gemini(
+def google(
     client: genai.Client = None,
     model: str = "gemini-2.0-flash"
 ) -> Provider: 
-    return Gemini(client or genai.Client(), model)
+    return Google(client or genai.Client(), model)

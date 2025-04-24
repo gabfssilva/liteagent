@@ -1,39 +1,47 @@
 import asyncio
-from typing import AsyncIterator
+from asyncio import Task, Queue, Lock
+from collections.abc import AsyncIterable, AsyncIterator
 
 
 class _Stop:
     pass
 
 
-class ContentStream[T]:
+class MemoizedAsyncIterable[T](AsyncIterable[T]):
+    _done: bool
+    _lock: Lock
+    _consumers: list[Queue[T]]
+    _main: Queue[T | _Stop]
+    _buffer: list[T]
+    _broadcast_task: Task[None]
+    _producer_task: Task[None] | None
+    _close_task: Task[None] | None
+
     def __init__(self):
         self._buffer: list[T] = []
         self._main: asyncio.Queue[T | _Stop] = asyncio.Queue()
         self._consumers: list[asyncio.Queue[T]] = []
         self._lock = asyncio.Lock()
-
-        self._pending_tasks: list[asyncio.Task] = [
-            asyncio.create_task(self._broadcast())
-        ]
-
+        self._broadcast_task = asyncio.create_task(self._broadcast())
+        self._producer_task = None
+        self._close_task = None
         self._done = False
 
     @classmethod
-    def from_async_iterator(cls, iterator: AsyncIterator[T]):
+    def from_async_iterable(cls, iterable: AsyncIterable[T]):
         self = cls()
 
         async def _from_async_iterator():
-            async for item in iterator:
-                await self.emit(item)
+            try:
+                async for item in iterable:
+                    await self.emit(item)
+            finally:
+                await self.close()
 
-            await self.close()
-
-        asyncio.create_task(_from_async_iterator())
-
+        self._producer_task = asyncio.create_task(_from_async_iterator())
         return self
 
-    def iterator(self) -> AsyncIterator[T]:
+    def iterator(self) -> AsyncIterable[T]:
         return self.__aiter__()
 
     async def _broadcast(self):
@@ -41,14 +49,14 @@ class ContentStream[T]:
             item = await self._main.get()
 
             async with self._lock:
-                for consumer in self._consumers:
-                    await consumer.put(item)
-
                 self._buffer.append(item)
+                consumers = list(self._consumers)
 
                 if item is _Stop:
                     self._done = True
-                    return
+
+            tasks = [consumer.put(item) for consumer in consumers]
+            await asyncio.gather(*tasks)
 
     async def collect(self) -> list[T]:
         return [item async for item in self]
@@ -56,7 +64,7 @@ class ContentStream[T]:
     def __aiter__(self) -> AsyncIterator[T]:
         queue = asyncio.Queue()
 
-        async def consume():
+        async def consume() -> AsyncIterator[T]:
             async with self._lock:
                 for item in self._buffer:
                     await queue.put(item)
@@ -67,7 +75,9 @@ class ContentStream[T]:
                 while True:
                     item = await queue.get()
                     if item is _Stop:
+                        queue.task_done()
                         break
+                    queue.task_done()
                     yield item
             finally:
                 async with self._lock:
@@ -81,4 +91,4 @@ class ContentStream[T]:
 
     async def close(self):
         await self._main.put(_Stop)
-        await asyncio.gather(*self._pending_tasks)
+        await self._broadcast_task

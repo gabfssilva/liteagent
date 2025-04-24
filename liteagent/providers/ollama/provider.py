@@ -1,5 +1,7 @@
+import uuid
 from abc import ABC
-from typing import Type, AsyncIterator, Callable
+import asyncio
+from typing import Type, AsyncIterable, Callable
 
 import httpx
 from ollama import AsyncClient, ChatResponse
@@ -7,7 +9,9 @@ from pydantic import BaseModel, TypeAdapter
 
 from liteagent import Tool
 from liteagent.internal.cleanup import register_provider
-from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, ImageBase64, ImageURL
+from liteagent.internal.memoized import MemoizedAsyncIterable
+from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, ImageBase64, ImageURL, \
+    Image
 from liteagent.provider import Provider
 
 
@@ -17,7 +21,7 @@ class Ollama(Provider, ABC):
     model: str
     automatic_download: bool
     downloaded: bool = False
-    chat: Callable[[...], ChatResponse | AsyncIterator[ChatResponse]] = None
+    chat: Callable[[...], ChatResponse | AsyncIterable[ChatResponse]] = None
 
     def __init__(
         self,
@@ -37,7 +41,7 @@ class Ollama(Provider, ABC):
         messages: list[Message],
         tools: list[Tool] = None,
         respond_as: Type[BaseModel] = None,
-    ) -> AsyncIterator[Message]:
+    ) -> AsyncIterable[Message]:
         await self._download_if_required()
 
         tool_definitions = list(map(lambda tool: tool.definition, tools)) if len(tools) > 0 else None
@@ -45,20 +49,9 @@ class Ollama(Provider, ABC):
 
         response_format = None if respond_as is None else TypeAdapter(respond_as).json_schema()
 
-        async def handle_response() -> Message:
-            response: ChatResponse = await self.chat(
-                model=self.model,
-                tools=tool_definitions,
-                messages=parsed_messages,
-                format=response_format
-            )
-
-            return AssistantMessage(
-                content=respond_as.model_validate_json(response.message.content)
-            )
-
-        async def handle_stream():
-            response: AsyncIterator[ChatResponse] = await self.chat(
+        if not respond_as:
+            # For streaming responses
+            response: AsyncIterable[ChatResponse] = await self.chat(
                 model=self.model,
                 tools=tool_definitions,
                 messages=parsed_messages,
@@ -66,37 +59,77 @@ class Ollama(Provider, ABC):
                 stream=True
             )
 
-            async for chunk in response:
-                for call in (chunk.message.tool_calls or []):
-                    yield AssistantMessage(
-                        content=ToolRequest(
-                            id='0',
-                            name=call.function.name,
-                            arguments=dict(call.function.arguments)
-                        )
-                    )
-
-                    continue
-
-                if respond_as and chunk.message.content and chunk.message.content != '':
-                    yield AssistantMessage(
-                        content=respond_as.model_validate_json(chunk.message.content)
-                    )
-
-                    continue
-
-                if chunk.message.content and chunk.message.content != '':
-                    yield AssistantMessage(
-                        content=chunk.message.content
-                    )
-
-                    continue
-
-        if not respond_as:
-            async for response in handle_stream():
-                yield response
+            async for message in self._as_messages(response, respond_as):
+                yield message
         else:
-            yield await handle_response()
+            # For non-streaming responses with respond_as
+            response: ChatResponse = await self.chat(
+                model=self.model,
+                tools=tool_definitions,
+                messages=parsed_messages,
+                format=response_format
+            )
+
+            message_stream = MemoizedAsyncIterable[Message]()
+            await message_stream.emit(AssistantMessage(
+                content=respond_as.model_validate_json(response.message.content)
+            ))
+            await message_stream.close()
+
+            async for message in message_stream:
+                yield message
+
+    @staticmethod
+    def _as_messages(response: AsyncIterable[ChatResponse], respond_as: Type[BaseModel] = None) -> AsyncIterable[Message]:
+        message_stream: MemoizedAsyncIterable[Message] = MemoizedAsyncIterable[Message]()
+        assistant_stream: MemoizedAsyncIterable | None = None
+
+        async def consume():
+            nonlocal message_stream, assistant_stream
+
+            try:
+                async for chunk in response:
+                    for call in (chunk.message.tool_calls or []):
+                        await message_stream.emit(AssistantMessage(
+                            content=ToolRequest(
+                                id=f'{uuid.uuid4()}',
+                                name=call.function.name,
+                                arguments=dict(call.function.arguments)
+                            )
+                        ))
+                        continue
+
+                    if respond_as and chunk.message.content and chunk.message.content != '':
+                        await message_stream.emit(AssistantMessage(
+                            content=respond_as.model_validate_json(chunk.message.content)
+                        ))
+                        continue
+
+                    if chunk.message.content and chunk.message.content != '':
+                        if not assistant_stream:
+                            assistant_stream = MemoizedAsyncIterable[str]()
+                            await assistant_stream.emit(chunk.message.content)
+                            await message_stream.emit(AssistantMessage(content=assistant_stream))
+                        else:
+                            await assistant_stream.emit(chunk.message.content)
+
+                        continue
+
+                if assistant_stream:
+                    await assistant_stream.close()
+
+                await message_stream.close()
+
+            except Exception as e:
+                # Handle any errors
+                if assistant_stream:
+                    await assistant_stream.close()
+                await message_stream.close()
+                raise
+
+        asyncio.create_task(consume())
+
+        return message_stream
 
     async def _download_if_required(self):
         if self.automatic_download and not self.downloaded:
@@ -120,7 +153,7 @@ class Ollama(Provider, ABC):
             case UserMessage(content=content):
                 string_content = "\n".join(filter(lambda c: isinstance(c, str), content))
 
-                async def image_content(image: ImageContent):
+                async def image_content(image: Image):
                     match image:
                         case ImageURL(url=url):
                             async with httpx.AsyncClient() as client:
@@ -128,6 +161,8 @@ class Ollama(Provider, ABC):
                                 return response.content
                         case ImageBase64(base64=base64_str):
                             return base64_str
+                        case _:
+                            return None
 
                 images = list(filter(lambda c: isinstance(c, ImageBase64) or isinstance(c, ImageURL), content))
 
@@ -176,16 +211,10 @@ class Ollama(Provider, ABC):
                     }]
                 }
 
-            case AssistantMessage(content=BaseModel() as content):
+            case AssistantMessage() as message:
                 return {
                     "role": "assistant",
-                    "content": content.model_dump_json(),
-                }
-
-            case AssistantMessage(content=str() as content):
-                return {
-                    "role": "assistant",
-                    "content": content,
+                    "content": await message.content_as_string(),
                 }
 
             case ToolMessage(id=id, content=content) as message:

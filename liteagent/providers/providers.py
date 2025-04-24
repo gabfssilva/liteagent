@@ -6,19 +6,21 @@ from liteagent.internal.cleanup import register_provider
 
 
 @register_provider
-def gemini(
+def google(
     model: str = "gemini-2.0-flash",
     **kwargs
 ) -> Provider:
     try:
         from google import genai
-        from liteagent.providers.google.provider import Gemini
+        from liteagent.providers.google.provider import Google
 
-        return Gemini(genai.Client(), model, **kwargs)
+        return Google(genai.Client(
+            api_key=os.getenv('GEMINI_API_KEY'),
+        ), model, **kwargs)
     except ImportError:
         raise ImportError(
-            "The google-genai package is required to use Gemini provider. "
-            "Please install it with 'pip install \"liteagents[gemini]\"'"
+            "The google-genai package is required to use Google provider. "
+            "Please install it with 'pip install \"liteagents[google]\"'"
         )
 
 
@@ -87,16 +89,15 @@ def azureai(
         )
 
 
-@register_provider
-def claude(
+def anthropic(
     model: str = 'claude-3-7-sonnet-20250219',
     api_key: str = None,
     **kwargs
 ) -> Provider:
     try:
         from anthropic import AsyncAnthropic
-        from liteagent.providers.anthropic.provider import claude
-        return claude(
+        from liteagent.providers.anthropic.provider import anthropic
+        return anthropic(
             client=AsyncAnthropic(
                 api_key=api_key or os.getenv('ANTHROPIC_API_KEY'),
             ),
@@ -106,8 +107,8 @@ def claude(
         )
     except ImportError:
         raise ImportError(
-            "The anthropic package is required to use the Claude provider. "
-            "Please install it with 'pip install \"liteagents[anthropic]\"' or 'pip install \"liteagents[agent]\"'"
+            "The anthropic package is required to use the Anthropic provider. "
+            "Please install it with 'pip install \"liteagents[anthropic]\"'"
         )
 
 

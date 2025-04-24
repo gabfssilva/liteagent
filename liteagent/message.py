@@ -1,5 +1,5 @@
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterable
 from dataclasses import dataclass, field
 from typing import Literal, Iterator
 
@@ -7,7 +7,7 @@ from pydantic import BaseModel, JsonValue
 
 from liteagent import Tool
 from liteagent.codec import to_json
-from liteagent.internal.memoized import ContentStream
+from liteagent.internal.memoized import MemoizedAsyncIterable
 
 
 @dataclass
@@ -42,7 +42,7 @@ Text = str
 
 Content = Text | Image | dict | JsonValue | ToolRequest | BaseModel
 
-PartialContent = ContentStream[Content] | AsyncIterator[Content] | Iterator[Content]
+PartialContent = MemoizedAsyncIterable[Content] | AsyncIterable[Content] | Iterator[Content]
 CompleteContent = Content | list[Content]
 MessageContent = CompleteContent | PartialContent
 
@@ -56,14 +56,14 @@ class Message:
     agent: str | None = field(init=False, default=None)
 
     def __post_init__(self):
-        if isinstance(self.content, ContentStream):
+        if isinstance(self.content, MemoizedAsyncIterable):
             return
 
-        if isinstance(self.content, AsyncIterator):
-            self.content = ContentStream.from_async_iterator(self.content)
+        if isinstance(self.content, AsyncIterable):
+            self.content = MemoizedAsyncIterable.from_async_iterable(self.content)
 
     async def acontent(self) -> MessageContent:
-        if isinstance(self.content, ContentStream):
+        if isinstance(self.content, MemoizedAsyncIterable):
             return await self.content.collect()
 
         return self.content
@@ -89,10 +89,10 @@ class UserMessage(Message):
 @dataclass
 class AssistantMessage(Message):
     role: Literal['assistant'] = field(init=False, default="assistant")
-    content: ContentStream[str] | ToolRequest | BaseModel
+    content: MemoizedAsyncIterable[str] | ToolRequest | BaseModel
 
     async def acontent(self) -> MessageContent:
-        if isinstance(self.content, ContentStream):
+        if isinstance(self.content, MemoizedAsyncIterable):
             return ''.join(await self.content.collect())
 
         return self.content

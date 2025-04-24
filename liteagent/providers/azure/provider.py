@@ -1,7 +1,8 @@
+import asyncio
 import json
 import os
 from functools import partial
-from typing import AsyncIterator, Type, Any, Optional
+from typing import AsyncIterable, Type, Any, Optional
 
 import azure.ai.inference.models as azure
 from azure.ai.inference.aio import ChatCompletionsClient
@@ -9,6 +10,7 @@ from azure.core.credentials import AzureKeyCredential
 
 from liteagent import Tool
 from liteagent.internal.cleanup import register_provider
+from liteagent.internal.memoized import MemoizedAsyncIterable
 from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage
 from liteagent.provider import Provider
 
@@ -38,8 +40,7 @@ class AzureAI(Provider):
         messages: list[Message],
         tools: list[Tool],
         respond_as: Type,
-    ) -> AsyncIterator[Message]:
-        # Convert tools to Azure format
+    ) -> AsyncIterable[Message]:
         azure_tools = None
 
         if tools:
@@ -64,52 +65,85 @@ class AzureAI(Provider):
             **self.args
         )
 
-        on_going_function = {"name": None, "arguments": ""}
-        on_going_response = "" if respond_as else None
+        async for message in await self._as_messages(completion_stream, respond_as):
+            yield message
 
-        async for response_chunk in completion_stream:
-            if response_chunk.choices:
-                choice = response_chunk.choices[0]
-                if choice.delta.content and on_going_response is None:
-                    yield AssistantMessage(content=choice.delta.content)
-                elif choice.delta.content:
-                    on_going_response = on_going_response + choice.delta.content
+    async def _as_messages(self, completion_stream, respond_as: Type = None) -> AsyncIterable[Message]:
+        message_stream: MemoizedAsyncIterable[Message] = MemoizedAsyncIterable[Message]()
+        assistant_stream: MemoizedAsyncIterable | None = None
 
-                    try:
-                        parsed_response = json.loads(on_going_response)
-                    except json.JSONDecodeError:
-                        continue
+        async def consume():
+            nonlocal message_stream, assistant_stream
 
-                    yield AssistantMessage(content=respond_as(**parsed_response))
-                elif choice.delta.tool_calls:
-                    tool_call = choice.delta.tool_calls[0]
+            on_going_function = {"name": None, "arguments": ""}
+            on_going_response = "" if respond_as else None
 
-                    if tool_call.function.name and '' != tool_call.function.name.strip():
-                        on_going_function = {
-                            "name": tool_call.function.name,
-                            "arguments": ""
-                        }
+            try:
+                async for response_chunk in completion_stream:
+                    if response_chunk.choices:
+                        choice = response_chunk.choices[0]
 
-                    if tool_call.function.arguments:
-                        on_going_function['arguments'] = on_going_function['arguments'] + tool_call.function.arguments
+                        if choice.delta.content and on_going_response is None:
+                            if not assistant_stream:
+                                assistant_stream = MemoizedAsyncIterable[str]()
+                                await assistant_stream.emit(choice.delta.content)
+                                await message_stream.emit(AssistantMessage(content=assistant_stream))
+                            else:
+                                await assistant_stream.emit(choice.delta.content)
 
-                        try:
-                            args = json.loads(on_going_function['arguments'])
-                        except json.JSONDecodeError:
-                            continue
+                        elif choice.delta.content:
+                            on_going_response = on_going_response + choice.delta.content
 
-                        yield AssistantMessage(
-                            content=ToolRequest(
-                                name=on_going_function['name'],
-                                id=tool_call.id or "0",
-                                arguments=args
-                            )
-                        )
+                            try:
+                                parsed_response = json.loads(on_going_response)
+                                await message_stream.emit(AssistantMessage(content=respond_as(**parsed_response)))
+                                on_going_response = ""
+                            except json.JSONDecodeError:
+                                continue
 
-                        on_going_function = {
-                            "name": None,
-                            "arguments": ""
-                        }
+                        elif choice.delta.tool_calls:
+                            tool_call = choice.delta.tool_calls[0]
+
+                            if tool_call.function.name and '' != tool_call.function.name.strip():
+                                on_going_function = {
+                                    "name": tool_call.function.name,
+                                    "arguments": ""
+                                }
+
+                            if tool_call.function.arguments:
+                                on_going_function['arguments'] = on_going_function['arguments'] + tool_call.function.arguments
+
+                                try:
+                                    args = json.loads(on_going_function['arguments'])
+                                    await message_stream.emit(AssistantMessage(
+                                        content=ToolRequest(
+                                            name=on_going_function['name'],
+                                            id=tool_call.id or "0",
+                                            arguments=args
+                                        )
+                                    ))
+
+                                    on_going_function = {
+                                        "name": None,
+                                        "arguments": ""
+                                    }
+                                except json.JSONDecodeError:
+                                    continue
+
+                if assistant_stream:
+                    await assistant_stream.close()
+
+                await message_stream.close()
+
+            except Exception as e:
+                if assistant_stream:
+                    await assistant_stream.close()
+                await message_stream.close()
+                raise
+
+        asyncio.create_task(consume())
+
+        return message_stream
 
     async def _map_message_to_azure(self, message: Message):
         match message:
@@ -119,24 +153,22 @@ class AzureAI(Provider):
                 )
 
             case AssistantMessage(content=ToolRequest(id=id, name=name, arguments=arguments)):
-                call = azure.ChatCompletionsToolCall(
-                    id=id,
-                    function=azure.FunctionCall(
-                        name=name,
-                        arguments=self._serialize_arguments(arguments)
-                    ),
-                )
-
                 return azure.AssistantMessage(
-                    tool_calls=[call]
+                    tool_calls=[azure.ChatCompletionsToolCall(
+                        id=id,
+                        function=azure.FunctionCall(
+                            name=name,
+                            arguments=self._serialize_arguments(arguments)
+                        ),
+                    )]
                 )
 
-            case AssistantMessage(content=content):
+            case AssistantMessage() as message:
                 return azure.AssistantMessage(
-                    content=self._convert_content(content)
+                    content=await message.content_as_string()
                 )
 
-            case ToolMessage(id=id, content=content) as message:
+            case ToolMessage(id=id) as message:
                 return azure.ToolMessage(
                     tool_call_id=id,
                     content=await message.content_as_string()
@@ -201,6 +233,4 @@ def azureai(
         **kwargs
     )
 
-
-# Shorthand for GitHub Copilot
 github = partial(azureai, api_key=os.getenv('GITHUB_TOKEN'))

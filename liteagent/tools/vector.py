@@ -1,4 +1,4 @@
-from typing import Callable, Awaitable, List, AsyncIterator
+from typing import Callable, Awaitable, List, AsyncIterable
 
 from pydantic import Field
 
@@ -24,7 +24,7 @@ class VectorStore(Tools):
         await self.store_documents(inner())
         return "saved"
 
-    async def store_documents(self, documents: AsyncIterator[Document]):
+    async def store_documents(self, documents: AsyncIterable[Document]):
         async def generate_chunks():
             async for document in documents:
                 chunks = await self.chunking_strategy.chunk(document.content)

@@ -1,4 +1,4 @@
-from typing import AsyncIterator, List
+from typing import AsyncIterable, List
 import os
 
 import numpy as np
@@ -49,7 +49,7 @@ class PgVector(VectorDatabase):
             await conn.run_sync(Base.doc_metadata.create_all)
         return self
 
-    async def store(self, documents: AsyncIterator[Document]):
+    async def store(self, documents: AsyncIterable[Document]):
         """Store documents in the database"""
         async with self.async_session() as session:
             async with session.begin():
@@ -67,7 +67,7 @@ class PgVector(VectorDatabase):
 
                     session.add(vector_entry)
 
-    async def search(self, text: str, k: int) -> AsyncIterator[Chunk]:
+    async def search(self, text: str, k: int) -> AsyncIterable[Chunk]:
         """Search for similar documents"""
         # Generate query embedding
         query_embedding = await self.tokenizer.encode(text)
