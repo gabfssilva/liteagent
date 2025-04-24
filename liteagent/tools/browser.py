@@ -200,16 +200,12 @@ class Browser(Tools):
         await self._ensure_active_page()
         pages = self.context.pages
 
-        result = []
-
         for index, page in enumerate(pages):
-            result.append({
+            yield {
                 "index": index,
                 "title": await page.title(),
                 "url": page.url,
-            })
-
-        return result
+            }
 
     @tool(emoji='📦')
     async def drag_and_drop(self, source_selector: str, target_selector: str) -> str:
@@ -247,28 +243,6 @@ class Browser(Tools):
         await self._ensure_active_page()
         await self.page.reload()
         return "Page reloaded"
-
-    @tool(emoji='📄')
-    async def inspect_page(self) -> list[dict]:
-        """Returns all elements on the page with their properties."""
-        await self._ensure_active_page()
-        elements = await self.page.query_selector_all("*")
-        results = []
-        for el in elements:
-            try:
-                tag = await el.evaluate("e => e.tagName")
-                text = await el.inner_text()
-                attrs = await el.evaluate(
-                    "e => Array.from(e.attributes).reduce((acc, a) => { acc[a.name] = a.value; return acc; }, {})"
-                )
-                results.append({
-                    "tag": tag,
-                    "text": text.strip(),
-                    "attributes": attrs
-                })
-            except Exception:
-                continue
-        return results
 
     @tool(emoji='🔤')
     async def click_by_text(self, tag: str, text: str):

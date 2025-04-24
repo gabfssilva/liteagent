@@ -1,9 +1,10 @@
+import re
 import shutil
 from pathlib import Path
-import re
-from typing import Dict, Any, TypedDict, List, Literal
+from typing import TypedDict, List, Literal
 
 from liteagent import Tools, tool, ToolDef
+
 
 class Files(Tools):
     def __init__(self, folder: str):
@@ -41,12 +42,13 @@ class Files(Tools):
         file_path = self.folder / path
         try:
             lines = file_path.read_text(encoding="utf-8").splitlines()
-            return [f"{i+1}: {line}" for i, line in enumerate(lines)]
+            return [f"{i + 1}: {line}" for i, line in enumerate(lines)]
         except Exception as e:
             return [f"Error reading file: {e}"]
 
     @tool(emoji='📖')
-    def read_partial(self, path: str, term: str | None = None, start_line: int | None = None, end_line: int | None = None, context: int = 2):
+    def read_partial(self, path: str, term: str | None = None, start_line: int | None = None,
+                     end_line: int | None = None, context: int = 2):
         """
         Read a partial view of the file, either by matching a term (with N lines of context)
         or by providing a start and end line number.
@@ -60,7 +62,7 @@ class Files(Tools):
 
             if start_line is not None and end_line is not None:
                 for i in range(start_line - 1, min(end_line, len(lines))):
-                    result.append(f"{i+1}: {lines[i]}")
+                    result.append(f"{i + 1}: {lines[i]}")
             elif term:
                 pattern = re.compile(term, re.IGNORECASE)
                 for i, line in enumerate(lines):
@@ -68,7 +70,7 @@ class Files(Tools):
                         start = max(0, i - context)
                         end = min(len(lines), i + context + 1)
                         for j in range(start, end):
-                            result.append(f"{j+1}: {lines[j]}")
+                            result.append(f"{j + 1}: {lines[j]}")
                         result.append("...")
                 if not result:
                     result = ["No match found."]
@@ -270,6 +272,7 @@ class Files(Tools):
             return f"Appended {len(lines)} lines to '{file_path}'."
         except Exception as e:
             return f"Error appending to file: {e}"
+
 
 def files(folder: str) -> ToolDef:
     return Files(folder)

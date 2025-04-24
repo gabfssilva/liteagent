@@ -84,7 +84,7 @@ class CollapsibleChatView(Static):
         *,
         id: str,
         name: str,
-        prompt: str,
+        prompt: dict | list | str,
         agent: Agent,
         classes: str = "tool-message"
     ):
@@ -95,6 +95,10 @@ class CollapsibleChatView(Static):
 
         self.agent_name = name
         self.pretty_name = name.replace("redirection", "").replace("_", " ").title()
+
+        if isinstance(prompt, dict) and len(prompt) == 1 and "prompt" in prompt:
+            prompt = prompt["prompt"]
+
         self.prompt = prompt
         self.agent = agent
         self.border_title = f"🤖 {self.pretty_name} ⚪"
@@ -112,7 +116,12 @@ class CollapsibleChatView(Static):
 
     def compose(self) -> ComposeResult:
         with TabbedContent("Prompt", "Result", classes="internal-chat-view"):
-            yield Pretty(self.prompt)
+            match self.prompt:
+                case dict() | list():
+                    yield Pretty(self.prompt)
+                case _:
+                    yield Markdown(str(self.prompt))
+
             yield ChatView(self.agent)
 
     def watch_frame(self, frame):
@@ -164,7 +173,7 @@ class ToolUseWidget(Static):
         self.tool_args = arguments
         self.set_styles(border_title=tool.emoji)
         self.title_template = f"{self.tool_emoji} {self.tool_name}" + " {emoji}"
-        self.border_title =  self.title_template.format(emoji="⚪")
+        self.border_title = self.title_template.format(emoji="⚪")
         self.tooltip = Content.from_text(tool.description, markup=False)
 
     @staticmethod
@@ -173,7 +182,10 @@ class ToolUseWidget(Static):
 
     def compose(self) -> ComposeResult:
         with TabbedContent("Arguments", "Result"):
-            yield Pretty(self.tool_args)
+            if self.tool_args == '{}' or len(self.tool_args) == 0:
+                yield Markdown("👻")
+            else:
+                yield Pretty(self.tool_args)
             yield AppendableMarkdown(content="", refresh_rate=1)
 
     def on_mount(self) -> None:
@@ -222,7 +234,12 @@ class ToolUseWidget(Static):
 
     async def append_json(self, chunk: JsonValue) -> None:
         result = self.query_one(AppendableMarkdown)
-        await result.append(f"""```json\n{json.dumps(chunk, indent=2)}\n```""")
+        json_string = json.dumps(chunk, indent=2)
+
+        if len(json_string) > 1000:
+            json_string = json_string[:1000] + "\n...[omitted]"
+
+        await result.append(f"""```json\n{json_string}\n```""")
 
 
 class ChatView(VerticalScroll):
@@ -252,7 +269,8 @@ class ChatView(VerticalScroll):
 
                     self.run_worker(append_stream(stream))
 
-                case AssistantMessage(content=ToolRequest(id=tool_id,arguments=arguments, tool=AgentDispatcherTool() as tool)):
+                case AssistantMessage(
+                    content=ToolRequest(id=tool_id, arguments=arguments, tool=AgentDispatcherTool() as tool)):
                     await self.mount(CollapsibleChatView(
                         id=f"{tool.name}_{tool_id}",
                         name=tool.name,
@@ -261,7 +279,7 @@ class ChatView(VerticalScroll):
                         classes="tool-message-inner" if inner else "tool-message",
                     ))
 
-                case AssistantMessage(content=ToolRequest(id=tool_id,arguments=arguments, tool=tool)):
+                case AssistantMessage(content=ToolRequest(id=tool_id, arguments=arguments, tool=tool)):
                     await self.mount(ToolUseWidget(
                         id=f"{tool.name}_{tool_id}",
                         arguments=arguments,

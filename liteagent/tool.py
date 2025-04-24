@@ -4,7 +4,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import partial
-from typing import List, AsyncIterator, Any, Coroutine
+from typing import List, AsyncIterator, Any, Coroutine, overload
 from typing import Type, Callable, Awaitable, Protocol, runtime_checkable
 
 from pydantic import BaseModel, JsonValue, create_model
@@ -16,10 +16,12 @@ Out = str | dict | BaseModel | Coroutine[Any, Any, 'Out']
 
 Handler = Callable[..., Out | Awaitable[Out | AsyncIterator[Out]] | AsyncIterator[Out]]
 
+
 class ToolDef(ABC):
     @abstractmethod
     def tools(self) -> List['Tool']:
         raise NotImplementedError
+
 
 @dataclass(kw_only=True)
 class Tool(ToolDef):
@@ -186,6 +188,7 @@ class Tool(ToolDef):
                 should_tell_user=True
             )
 
+
 class Tools(ToolDef, ABC):
     def tools(self) -> List[Tool]:
         tools = []
@@ -210,6 +213,7 @@ class Tools(ToolDef, ABC):
 class ToolResponse(Protocol):
     def __tool_response__(self) -> JsonValue:
         pass
+
 
 class FunctionToolDef(ToolDef):
     def __init__(self, function: Callable, name: str = None, eager: bool = False, emoji='🔧'):
@@ -246,11 +250,13 @@ class FunctionToolDef(ToolDef):
             eager=self.eager
         )]
 
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .agent import Agent
     from . import Message
+
 
 @dataclass(kw_only=True)
 class AgentDispatcherTool(Tool):
@@ -290,3 +296,57 @@ class AgentDispatcherTool(Tool):
             f"{self.agent.name.capitalize()}Input",
             **parameters
         )
+
+
+class ToolOut(Protocol):
+    async def __json__(self) -> JsonValue: pass
+
+
+@overload
+async def to_json(value: ToolOut) -> JsonValue:
+    return await value.__json__()
+
+
+@overload
+async def to_json[T: str | int | float | bool | None](value: T) -> JsonValue:
+    return value
+
+
+@overload
+async def to_json(value: list) -> JsonValue:
+    return [await to_json(value) for value in value]
+
+
+class JsonConverter[I]:
+    def __init__(self, value: I, converter: Callable[[I], Awaitable[JsonValue]]):
+        self.value = value
+        self.converter = converter
+
+    async def __json__(self) -> JsonValue:
+        return await self.converter(self.value)
+
+
+class TypeConverter[I, O](ABC):
+    @abstractmethod
+    async def convert(self, value: I) -> O:
+        pass
+
+
+class BaseModelToJson(TypeConverter[BaseModel, JsonValue]):
+    async def convert(self, value: BaseModel) -> JsonValue:
+        return value.model_dump()
+
+
+class SimpleValueToJson(TypeConverter[str | int | float | bool, JsonValue]):
+    async def convert(self, value: str | int | float | bool) -> JsonValue:
+        return value
+
+
+class ListToJson(TypeConverter[list, JsonValue]):
+    async def convert(self, value: list) -> JsonValue:
+        return value
+
+
+class DictToJson(TypeConverter[dict, JsonValue]):
+    async def convert(self, value: dict) -> JsonValue:
+        pass

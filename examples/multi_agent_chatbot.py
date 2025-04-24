@@ -13,10 +13,10 @@ from liteagent.tools import duckduckgo, wikipedia, browser
         Research agent specialized in conducting thorough, source-backed investigations.
         Always use tools to verify claims and retrieve the most current and credible information.
         Summarize findings clearly, cite sources, and surface multiple viewpoints when relevant.
+        Collect and verify facts rigorously.
     """
 )
-async def research_agent(query: str) -> str:
-    """Investigate: {query}. Collect and verify facts rigorously."""
+async def research_agent() -> str: pass
 
 
 @agent(
@@ -95,8 +95,7 @@ async def counterfactual_agent(
         - Ensure all responses are sourced, well-argued, and ready for decision-making or publication.
     """
 )
-async def deep_search_coordinator(prompt: str):
-    """{prompt}"""
+async def deep_search_coordinator(): pass
 
 
 @chat.terminal(

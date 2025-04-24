@@ -1,11 +1,12 @@
 import json
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, is_dataclass, asdict, field
+from dataclasses import dataclass, field
 from typing import Literal, Iterator
 
 from pydantic import BaseModel, JsonValue
 
 from liteagent import Tool
+from liteagent.codec import to_json
 from liteagent.internal.memoized import ContentStream
 
 
@@ -67,35 +68,17 @@ class Message:
 
         return self.content
 
-    @staticmethod
-    async def _as_json(content) -> JsonValue:
-        match content:
-            case BaseModel() as model:
-                return model.model_dump()
-            case Message() as message:
-                return await message.to_dict()
-            case dt if is_dataclass(dt):
-                return asdict(dt)
-            case dict() as dict_value:
-                return {k: await Message._as_json(v) for k, v in dict_value.items()}
-            case str() | int() | float() | bool() | None as json_value:
-                return json_value
-            case list() as items:
-                return [await Message._as_json(item) for item in items]
-            case _:
-                raise TypeError(f"Unsupported type for serialization: {type(content)}")
-
-    async def content_as_json(self) -> JsonValue:
-        return await self._as_json(await self.acontent())
-
-    async def content_as_string(self) -> str:
-        return json.dumps(await self.content_as_json())
-
-    async def to_dict(self) -> JsonValue:
+    async def __json__(self) -> JsonValue:
         return {
             "role": self.role,
             "content": await self.content_as_string(),
         }
+
+    async def content_as_json(self) -> JsonValue:
+        return await to_json(await self.acontent())
+
+    async def content_as_string(self) -> str:
+        return json.dumps(await self.content_as_json())
 
 
 @dataclass
