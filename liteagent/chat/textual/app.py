@@ -8,14 +8,16 @@ from pydantic import JsonValue
 from rich.errors import MarkupError
 from textual import on
 from textual.app import App, ComposeResult
-from textual.containers import VerticalScroll
+from textual.containers import VerticalScroll, Container, HorizontalScroll
 from textual.content import Content
 from textual.reactive import reactive, var
+from textual.widget import Widget
 from textual.widgets import Markdown, Input, Static, Pretty, TabbedContent
 
 from liteagent import AssistantMessage, UserMessage, ToolRequest, Agent, ToolMessage, Tool, AgentDispatcherTool
 from liteagent.internal.memoized import MemoizedAsyncIterable
 from liteagent.message import ExecutionError, Message, AgentLike
+from liteagent.chat.textual.plotext import plot_stacked_bar
 
 
 class AppendableMarkdown(Static):
@@ -176,18 +178,28 @@ class ToolUseWidget(Static):
         self.title_template = f"{self.tool_emoji} {self.tool_name}" + " {emoji}"
         self.border_title = self.title_template.format(emoji="⚪")
         self.tooltip = Content.from_text(tool.description, markup=False)
+        self.widget_response = issubclass(tool.response_type, Widget)
 
     @staticmethod
     def _camel_to_words(text: str) -> str:
         return re.sub(r'(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])', ' ', text)
 
     def compose(self) -> ComposeResult:
-        with TabbedContent("Arguments", "Result"):
+        with TabbedContent("Arguments", "Result" if not self.widget_response else "Widget"):
             if self.tool_args == '{}' or len(self.tool_args) == 0:
                 yield Markdown("👻")
             else:
                 yield Pretty(self.tool_args)
-            yield AppendableMarkdown(content="", refresh_rate=1)
+            if not self.widget_response:
+                yield AppendableMarkdown(content="", refresh_rate=1)
+            else:
+                yield HorizontalScroll(
+                    id="widget_response",
+                    disabled=True,
+                    can_focus=False,
+                    can_focus_children=False,
+                    can_maximize=False
+                )
 
     def on_mount(self) -> None:
         self.state = "waiting"
@@ -226,6 +238,11 @@ class ToolUseWidget(Static):
         self.state = "failed" if failed else "completed"
         self.query_one(AppendableMarkdown).finish()
 
+    async def append_widget(self, widget: Widget) -> None:
+        scroll = self.query_one("#widget_response", HorizontalScroll)
+        await scroll.mount(widget)
+        self.state = "completed"
+
     async def append_result(self, chunk: str) -> None:
         if len(chunk) > 250:
             chunk = chunk[:250] + "\n...[omitted]"
@@ -246,6 +263,7 @@ class ToolUseWidget(Static):
 class ChatView(VerticalScroll):
     def __init__(self, agent: Agent, id: str = None):
         super().__init__(id=id)
+        agent.with_tool(plot_stacked_bar)
         self._agent = agent
 
     async def process(self, messages: AsyncIterable[Message], inner: bool) -> None:
@@ -287,6 +305,10 @@ class ChatView(VerticalScroll):
                         tool=tool,
                         classes="tool-message" if not inner else "tool-message-inner"
                     ))
+
+                case ToolMessage() as tool_message if isinstance(tool_message.content, Widget):
+                    widget = self.query_one(f"#{tool_message.name}_{tool_message.id}", ToolUseWidget)
+                    await widget.append_widget(tool_message.content)
 
                 case ToolMessage(tool=AgentDispatcherTool()) as tool_message:
                     widget = self.query_one(f"#{tool_message.name}_{tool_message.id}", CollapsibleChatView)

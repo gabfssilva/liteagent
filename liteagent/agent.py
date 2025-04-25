@@ -88,6 +88,15 @@ class Agent[Out]:
     def __signature__(self):
         return self.signature
 
+    def with_tool(self, definition: ToolDef):
+        for tool in definition.tools():
+            self.tools.append(tool)
+
+        self._all_tools = self.tools + list(
+            itertools.chain.from_iterable(map(lambda agent: agent.as_tool().tools(), self.team)))
+
+        self._tool_by_name = {t.name: t for t in self._all_tools}
+
     def execution_count(
         self,
         messages: list[Message],

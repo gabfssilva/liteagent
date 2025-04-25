@@ -8,5 +8,7 @@ wheels/
 
 .idea/
 
+.python-version
+
 # Virtual environments
 .venv

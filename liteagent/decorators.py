@@ -3,7 +3,7 @@ from typing import List, Callable
 
 from .agent import Agent, AsyncInterceptor
 from .provider import Provider
-from .tool import ToolDef, FunctionToolDef
+from .tool import ToolDef, FunctionToolDef, Tool
 
 
 def tool(
@@ -11,9 +11,9 @@ def tool(
     description: str = None,
     eager: bool = False,
     emoji: str = '🔧',
-) -> ToolDef | Callable[..., ToolDef]:
-    def decorator(function) -> ToolDef:
-        return FunctionToolDef(function, name, description, eager, emoji)
+) -> Tool | Callable[..., Tool]:
+    def decorator(function) -> Tool:
+        return FunctionToolDef(function, name, description, eager, emoji).tool
 
     if callable(name):
         func = name

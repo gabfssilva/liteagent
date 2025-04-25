@@ -74,6 +74,10 @@ class Tool(ToolDef):
                 self._make_all_fields_required(def_schema)
 
     @property
+    def response_type(self):
+        return inspect.signature(self.handler).return_annotation
+
+    @property
     def input_schema(self):
         schema = self._prepare(self.input.model_json_schema())
         self._remove_defaults(schema)
@@ -216,6 +220,8 @@ class ToolResponse(Protocol):
 
 
 class FunctionToolDef(ToolDef):
+    tool: Tool
+
     def __init__(self, function: Callable, name: str = None, description: str = None, eager: bool = False, emoji='🔧'):
         self.function = function
         self.name = name or function.__name__
@@ -223,7 +229,6 @@ class FunctionToolDef(ToolDef):
         self.eager = eager
         self.emoji = emoji
 
-    def tools(self) -> List[Tool]:
         signature = inspect.signature(self.function)
 
         input_fields = [
@@ -241,14 +246,16 @@ class FunctionToolDef(ToolDef):
             else:
                 field_definitions[field_name] = (field_type, Field(default=field_default))
 
-        return [Tool(
+        self.tool = Tool(
             name=self.name,
             description=self.description,
             input=create_model(self.name.capitalize(), **field_definitions),
             handler=self.function,
             emoji=self.emoji,
             eager=self.eager
-        )]
+        )
+
+    def tools(self) -> List[Tool]:  return [self.tool]
 
 
 from typing import TYPE_CHECKING

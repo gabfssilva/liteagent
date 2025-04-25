@@ -87,14 +87,12 @@ vision = [
 ]
 
 html_parser = ["markdownify>=0.14.1"]
-#crawl4ai = ["crawl4ai==v0.5.0.post8"]
 duckduckgo = ["duckduckgo-search>=7.3.0"]
 googlesearch = ["googlesearch-python>=1.2.5"]
 feedparser = ["feedparser>=6.0.11"]
 
 web = [
     "markdownify>=0.14.1",
-#    "crawl4ai>=0.4.248",
     "duckduckgo-search>=7.3.0",
     "googlesearch-python>=1.2.5",
     "feedparser>=6.0.11",
@@ -217,7 +215,6 @@ full = [
     "pymupdf4llm>=0.0.17",
     # web
     "markdownify>=0.14.1",
-    #    "crawl4ai>=0.4.248",
     "duckduckgo-search>=7.3.0",
     "googlesearch-python>=1.2.5",
     "feedparser>=6.0.11",
@@ -266,7 +263,6 @@ all = [
     "qdrant-client>=1.13.2",
     "pymupdf4llm>=0.0.17",
     "markdownify>=0.14.1",
-    #    "crawl4ai>=0.4.248",
     "duckduckgo-search>=7.3.0",
     "googlesearch-python>=1.2.5",
     "feedparser>=6.0.11",
@@ -287,6 +283,8 @@ all = [
     "joblib>=1.4.2",
     "pydoll-python>=1.7.0",
     "playwright>=1.51.0",
+    "plotext>=5.3.2",
+    "textual-plotext>=1.0.1",
 ]
 pydoll = [
     "pydoll-python>=1.7.0",
