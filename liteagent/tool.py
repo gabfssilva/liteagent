@@ -216,10 +216,10 @@ class ToolResponse(Protocol):
 
 
 class FunctionToolDef(ToolDef):
-    def __init__(self, function: Callable, name: str = None, eager: bool = False, emoji='🔧'):
+    def __init__(self, function: Callable, name: str = None, description: str = None, eager: bool = False, emoji='🔧'):
         self.function = function
         self.name = name or function.__name__
-        self.description = inspect.getdoc(function) or f"Tool {self.name}"
+        self.description = description or inspect.getdoc(function) or f"Tool {self.name}"
         self.eager = eager
         self.emoji = emoji
 

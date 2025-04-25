@@ -4,7 +4,8 @@ from collections.abc import AsyncIterable, AsyncIterator
 
 
 class _Stop:
-    pass
+    def __init__(self, reason: Exception | None = None):
+        self.reason = reason
 
 
 class MemoizedAsyncIterable[T](AsyncIterable[T]):
@@ -52,7 +53,7 @@ class MemoizedAsyncIterable[T](AsyncIterable[T]):
                 self._buffer.append(item)
                 consumers = list(self._consumers)
 
-                if item is _Stop:
+                if isinstance(item, _Stop):
                     self._done = True
 
             tasks = [consumer.put(item) for consumer in consumers]
@@ -74,9 +75,15 @@ class MemoizedAsyncIterable[T](AsyncIterable[T]):
             try:
                 while True:
                     item = await queue.get()
-                    if item is _Stop:
+
+                    if isinstance(item, _Stop):
                         queue.task_done()
+
+                        if item.reason:
+                            raise item.reason
+
                         break
+
                     queue.task_done()
                     yield item
             finally:
@@ -87,8 +94,31 @@ class MemoizedAsyncIterable[T](AsyncIterable[T]):
         return consume()
 
     async def emit(self, item: T):
+        if self._done:
+            raise RuntimeError("Cannot emit to a closed MemoizedAsyncIterable")
+
         await self._main.put(item)
 
-    async def close(self):
-        await self._main.put(_Stop)
+    async def close(self, reason: Exception | None = None):
+        await self._main.put(_Stop(reason=reason))
         await self._broadcast_task
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.close(reason=exc)
+
+
+async def main():
+    async with MemoizedAsyncIterable() as stream:
+        await stream.emit(1)
+        await stream.emit(2)
+        await stream.emit(3)
+
+    async for element in stream:
+        print(element)
+
+
+if __name__ == '__main__':
+    asyncio.run(main())

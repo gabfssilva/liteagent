@@ -2,7 +2,7 @@ import asyncio
 import json
 import re
 import time
-from typing import AsyncIterable, AsyncIterable
+from typing import AsyncIterable
 
 from pydantic import JsonValue
 from rich.errors import MarkupError
@@ -15,7 +15,7 @@ from textual.widgets import Markdown, Input, Static, Pretty, TabbedContent
 
 from liteagent import AssistantMessage, UserMessage, ToolRequest, Agent, ToolMessage, Tool, AgentDispatcherTool
 from liteagent.internal.memoized import MemoizedAsyncIterable
-from liteagent.message import ExecutionError, Message
+from liteagent.message import ExecutionError, Message, AgentLike
 
 
 class AppendableMarkdown(Static):
@@ -62,14 +62,15 @@ class UserMessageWidget(Static):
 class AssistantMessageWidget(Static):
     def __init__(
         self,
-        name: str,
+        agent: AgentLike,
         classes: str = "assistant-message",
         refresh_rate: float = 0.5,
     ):
         super().__init__(classes=classes)
         self.markdown = AppendableMarkdown(content="", refresh_rate=refresh_rate)
         self.border_title = "🤖"
-        self.border_subtitle = name
+        self.border_subtitle = agent.name.replace("_", " ").title()
+        self.tooltip = f'{agent.provider}'
 
     def compose(self) -> ComposeResult:
         yield self.markdown
@@ -255,7 +256,7 @@ class ChatView(VerticalScroll):
 
                 case AssistantMessage(content=MemoizedAsyncIterable() as stream):
                     assistant_widget = AssistantMessageWidget(
-                        message.agent.replace("_", " ").title(),
+                        message.agent,
                         "assistant-message" if not inner else "assistant-message-inner", 1 if inner else 1 / 30
                     )
 

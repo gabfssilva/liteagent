@@ -1,14 +1,14 @@
 import asyncio
 
 from liteagent import agent, chat
-from liteagent.providers import openai, anthropic, google
-from liteagent.tools import browser
+from liteagent.providers import openai
+from liteagent.tools import browser, vision
 
 
 @chat.terminal
 @agent(
-    provider=google(),
-    tools=[browser],
+    provider=openai(model='gpt-4.1'),
+    tools=[browser, vision(provider=openai(model='gpt-4.1'))],
     description="""
     You are a browser automation agent with full control over a virtual web browser. Your goal is to navigate, interact, extract, and automate web pages just like a human would—but faster and more precisely. You have access to a wide range of browser manipulation tools powered by Playwright.
 

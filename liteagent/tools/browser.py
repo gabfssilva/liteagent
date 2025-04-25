@@ -37,7 +37,7 @@ class Browser(Tools):
             self.context = await self.browser.new_context()
             self.page = await self.context.new_page()
 
-    @tool(emoji='🏃🏽‍♀️‍➡️')
+    @tool(emoji='🌐')
     async def go_to(self, url: str) -> str:
         """Navigates the browser to a specified URL."""
         await self._ensure_active_page()
@@ -325,7 +325,7 @@ class Browser(Tools):
         }),
         TypedDict("WaitLoadState", {
             "type": Literal["load_state"],
-            "state": Literal["load", "domcontentloaded", "networkidle", "commit"],
+            "state": Literal["load", "domcontentloaded", "commit"],
         }),
         TypedDict("WaitTimeout", {
             "type": Literal["timeout"],

@@ -1,8 +1,10 @@
+import base64
 import json
 from collections.abc import AsyncIterable
 from dataclasses import dataclass, field
-from typing import Literal, Iterator
+from typing import Literal, Iterator, Protocol
 
+import aiofiles
 from pydantic import BaseModel, JsonValue
 
 from liteagent import Tool
@@ -26,18 +28,52 @@ class ToolRequest:
     origin: Literal["local", "model"] = "model"
     tool: Tool | None = field(default=None)
 
+    async def __json__(self) -> JsonValue:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "arguments": self.arguments,
+        }
+
 
 @dataclass
 class ImageURL:
+    type: Literal["url"] = field(init=False, default="url")
     url: str
 
 
 @dataclass
 class ImageBase64:
+    type: Literal["base64"] = field(init=False, default="base64")
     base64: str
 
 
-Image = ImageURL | ImageBase64
+@dataclass
+class ImagePath:
+    type: Literal["path"] = field(init=False, default="path")
+    path: str
+
+    def image_type(self) -> str:
+        return self.path.split('.')[-1]
+
+    async def as_base64(self) -> str:
+        async with aiofiles.open(self.path, "rb") as image_file:
+            content = await image_file.read()
+            return base64.b64encode(content).decode("utf-8")
+
+
+@dataclass
+class ImageBytes:
+    type: Literal["bytes"] = field(init=False, default="bytes")
+    bytes: bytes
+
+    def __json__(self) -> JsonValue:
+        return {
+            "base64": self.bytes.decode('utf-8')
+        }
+
+
+Image = ImageURL | ImageBase64 | ImageBytes | ImagePath
 Text = str
 
 Content = Text | Image | dict | JsonValue | ToolRequest | BaseModel
@@ -49,11 +85,16 @@ MessageContent = CompleteContent | PartialContent
 Role = Literal["user", "assistant", "system", "tool"]
 
 
+class AgentLike(Protocol):
+    name: str
+    provider: object
+
+
 @dataclass
 class Message:
     role: Role
     content: MessageContent
-    agent: str | None = field(init=False, default=None)
+    agent: AgentLike | None = field(init=False, default=None)
 
     def __post_init__(self):
         if isinstance(self.content, MemoizedAsyncIterable):

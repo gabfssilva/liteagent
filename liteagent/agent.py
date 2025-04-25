@@ -1,6 +1,7 @@
 import asyncio
 import itertools
 import time
+import uuid
 from inspect import Signature
 from typing import Callable, List, AsyncIterable, Type, Literal, overload
 
@@ -57,7 +58,8 @@ class Agent[Out]:
         self.description = description
         self.tools = list(itertools.chain.from_iterable(map(lambda tool: tool.tools(), tools))) if tools else []
         self.team = team or []
-        self._all_tools = self.tools + list(itertools.chain.from_iterable(map(lambda agent: agent.as_tool().tools(), self.team)))
+        self._all_tools = self.tools + list(
+            itertools.chain.from_iterable(map(lambda agent: agent.as_tool().tools(), self.team)))
         self._tool_by_name = {t.name: t for t in self._all_tools}
         self.audit = audit or []
         self.intercept = intercept or None
@@ -138,15 +140,18 @@ class Agent[Out]:
         *content: MessageContent | Message,
         **kwargs,
     ) -> List[Message]:
-        if kwargs:
-            if not self.signature or not self.user_prompt_template:
-                raise ValueError("Agent missing signature or prompt template.")
+        if len(content) == 0 and kwargs and len(kwargs) > 0 and self.user_prompt_template:
             bound = self.signature.bind(**kwargs)
             bound.apply_defaults()
             content = [self.user_prompt_template.format(**bound.arguments)]
-        elif not content and self.user_prompt_template:
+
+        if len(content) == 0 and kwargs and len(kwargs) > 0:
+            content = list(kwargs.values())
+
+        if len(content) == 0 and self.user_prompt_template:
             content = [self.user_prompt_template]
-        elif not content:
+
+        if not content:
             raise ValueError("No content provided to the agent.")
 
         def to_msg(c: MessageContent | Message) -> Message:
@@ -342,7 +347,7 @@ class Agent[Out]:
 
             agent_logger.debug("starting_call")
             async for m in self._call(message_list):
-                m.agent = self.name
+                m.agent = self
                 yield m
 
         agent_logger.debug("starting_intercept")
@@ -410,9 +415,11 @@ class Agent[Out]:
         for tool in eager_tools:
             agent_logger.info("invoking_eager_tool", tool=tool.name)
 
+            tool_id = uuid.uuid4()
+            
             result.append(AssistantMessage(
                 content=ToolRequest(
-                    id='0',
+                    id=f'{tool_id}',
                     name=tool.name,
                     arguments={},
                     origin='local',
@@ -425,10 +432,11 @@ class Agent[Out]:
                 end = time.perf_counter()
 
                 total = end - start
-                agent_logger.debug("eager_tool_success", tool=tool.name, result_type=type(tool_result).__name__, seconds=f'{total:.4f}')
+                agent_logger.debug("eager_tool_success", tool=tool.name, result_type=type(tool_result).__name__,
+                                   seconds=f'{total:.4f}')
 
                 result.append(ToolMessage(
-                    id='0',
+                    id=f'{tool_id}',
                     name=tool.name,
                     content=tool_result,
                     tool=tool,

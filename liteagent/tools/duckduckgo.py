@@ -1,33 +1,43 @@
-from typing import Literal
+from typing import Literal, TYPE_CHECKING
+
+from liteagent.internal import depends_on
+
+if TYPE_CHECKING:
+    from duckduckgo_search import DDGS
 
 from pydantic import Field
 
-from liteagent import tool
-from liteagent.internal import depends_on
+from liteagent import tool, Tools
 
 
-@tool(emoji='🔎')
-@depends_on({
-    "duckduckgo_search": "duckduckgo-search"
-})
-def duckduckgo(
-    keywords: str,
-    region: str | None,
-    safesearch: Literal['on', 'moderate', 'off'],
-    timelimit: str | None,
-    backend: Literal['auto', 'html', 'lite'],
-    max_results: int | None = Field(...,
-                                    description="The maximum number of results to return. Defaults to 100. Recommended >= 50 and <= 250"),
-):
-    """ search for information on the internet using DuckDuckGo. """
+class DuckDuckGo(Tools):
+    def __init__(self, client: 'DDGS' = None):
+        from duckduckgo_search import DDGS
+        
+        self.client = client or DDGS()
 
-    from duckduckgo_search import DDGS
+    @tool(emoji='🔎')
+    def search(
+        self,
+        keywords: str,
+        region: str | None,
+        safesearch: Literal['on', 'moderate', 'off'],
+        timelimit: str | None,
+        backend: Literal['auto', 'html', 'lite'],
+        max_results: int | None = Field(..., description="Number of results. Defaults to 100."),
+    ):
+        """ search for information on the internet using DuckDuckGo. """
 
-    return DDGS().text(
-        keywords,
-        region or "wt-wt",
-        safesearch,
-        timelimit,
-        backend,
-        max_results or 100
-    )
+        return self.client.text(
+            keywords,
+            region or "wt-wt",
+            safesearch,
+            timelimit,
+            backend,
+            max_results or 100
+        )
+
+
+@depends_on({"duckduckgo_search": "duckduckgo-search"})
+def duckduckgo(client: 'DDGS' = None) -> DuckDuckGo:
+    return DuckDuckGo(client=client)

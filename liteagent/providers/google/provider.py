@@ -1,22 +1,22 @@
 import asyncio
+import uuid
 from typing import AsyncIterable, Type
 
 from pydantic import BaseModel, TypeAdapter
+from google import genai
+from google.genai import types
 
 from liteagent import Tool
 from liteagent.internal import register_provider
 from liteagent.internal.memoized import MemoizedAsyncIterable
-from liteagent.message import ToolRequest, Message, AssistantMessage, ToolMessage
+from liteagent.message import ToolRequest, Message, AssistantMessage
 from liteagent.provider import Provider
 
-from google import genai
-from google.genai import types
 
 class Google(Provider):
     name: str = "gemini"
 
     def __init__(self, client: genai.Client, model: str = "gemini-2.0-flash-exp", **kwargs):
-        super().__init__(**kwargs)
         self.client = client
         self.model = model
         self.args = kwargs
@@ -69,7 +69,7 @@ class Google(Provider):
                         for call in chunk.function_calls:
                             await message_stream.emit(AssistantMessage(
                                 content=ToolRequest(
-                                    id=str(call.id or "0"),
+                                    id=str(call.id or uuid.uuid4()),
                                     name=call.name,
                                     arguments=call.args,
                                 )
@@ -132,9 +132,13 @@ class Google(Provider):
                 else:
                     self._recursive_purge_dict_key(d[key], k)
 
+    def __repr__(self):
+        return f"Google({self.model})"
+
+
 @register_provider
 def google(
     client: genai.Client = None,
     model: str = "gemini-2.0-flash"
-) -> Provider: 
+) -> Provider:
     return Google(client or genai.Client(), model)

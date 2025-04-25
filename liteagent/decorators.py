@@ -1,14 +1,19 @@
 import inspect
-from typing import List, Callable, Any
+from typing import List, Callable
 
 from .agent import Agent, AsyncInterceptor
 from .provider import Provider
 from .tool import ToolDef, FunctionToolDef
 
 
-def tool(name: str = None, eager: bool = False, emoji: str = '🔧') -> ToolDef | Callable[..., ToolDef]:
+def tool(
+    name: str = None,
+    description: str = None,
+    eager: bool = False,
+    emoji: str = '🔧',
+) -> ToolDef | Callable[..., ToolDef]:
     def decorator(function) -> ToolDef:
-        return FunctionToolDef(function, name, eager, emoji)
+        return FunctionToolDef(function, name, description, eager, emoji)
 
     if callable(name):
         func = name
@@ -40,7 +45,7 @@ def agent[Out](
                 Parameter("prompt", kind=Parameter.POSITIONAL_OR_KEYWORD, annotation=str)
             ])
 
-            if user_prompt_template is None or user_prompt_template.strip() == "" :
+            if user_prompt_template is None or user_prompt_template.strip() == "":
                 user_prompt_template = "{prompt}"
 
         agent_instance = Agent[Out](

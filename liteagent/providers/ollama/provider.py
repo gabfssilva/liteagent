@@ -11,7 +11,7 @@ from liteagent import Tool
 from liteagent.internal.cleanup import register_provider
 from liteagent.internal.memoized import MemoizedAsyncIterable
 from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, ImageBase64, ImageURL, \
-    Image
+    Image, ImageBytes
 from liteagent.provider import Provider
 
 
@@ -28,9 +28,7 @@ class Ollama(Provider, ABC):
         client: AsyncClient = AsyncClient(),
         model: str = 'llama3.2',
         automatic_download: bool = True,
-        **kwargs
-    ):
-        super().__init__(**kwargs)
+    ) -> None:
         self.model = model
         self.client = client
         self.automatic_download = automatic_download
@@ -50,7 +48,6 @@ class Ollama(Provider, ABC):
         response_format = None if respond_as is None else TypeAdapter(respond_as).json_schema()
 
         if not respond_as:
-            # For streaming responses
             response: AsyncIterable[ChatResponse] = await self.chat(
                 model=self.model,
                 tools=tool_definitions,
@@ -62,7 +59,6 @@ class Ollama(Provider, ABC):
             async for message in self._as_messages(response, respond_as):
                 yield message
         else:
-            # For non-streaming responses with respond_as
             response: ChatResponse = await self.chat(
                 model=self.model,
                 tools=tool_definitions,
@@ -80,12 +76,16 @@ class Ollama(Provider, ABC):
                 yield message
 
     @staticmethod
-    def _as_messages(response: AsyncIterable[ChatResponse], respond_as: Type[BaseModel] = None) -> AsyncIterable[Message]:
+    def _as_messages(
+        response: AsyncIterable[ChatResponse],
+        respond_as: Type[BaseModel] = None
+    ) -> AsyncIterable[Message]:
         message_stream: MemoizedAsyncIterable[Message] = MemoizedAsyncIterable[Message]()
-        assistant_stream: MemoizedAsyncIterable | None = None
 
         async def consume():
-            nonlocal message_stream, assistant_stream
+            nonlocal message_stream
+
+            assistant_stream: MemoizedAsyncIterable | None = None
 
             try:
                 async for chunk in response:
@@ -97,6 +97,7 @@ class Ollama(Provider, ABC):
                                 arguments=dict(call.function.arguments)
                             )
                         ))
+
                         continue
 
                     if respond_as and chunk.message.content and chunk.message.content != '':
@@ -117,14 +118,14 @@ class Ollama(Provider, ABC):
 
                 if assistant_stream:
                     await assistant_stream.close()
+                    assistant_stream = None
 
                 await message_stream.close()
 
             except Exception as e:
-                # Handle any errors
                 if assistant_stream:
-                    await assistant_stream.close()
-                await message_stream.close()
+                    await assistant_stream.close(e)
+                await message_stream.close(e)
                 raise
 
         asyncio.create_task(consume())
@@ -150,9 +151,13 @@ class Ollama(Provider, ABC):
     @staticmethod
     async def to_ollama_format(message: Message) -> dict:
         match message:
-            case UserMessage(content=content):
-                string_content = "\n".join(filter(lambda c: isinstance(c, str), content))
+            case UserMessage(content=str() as content):
+                return {
+                    "role": "user",
+                    "content": content,
+                }
 
+            case UserMessage(content=ImageURL() | ImageBase64() as content):
                 async def image_content(image: Image):
                     match image:
                         case ImageURL(url=url):
@@ -161,15 +166,14 @@ class Ollama(Provider, ABC):
                                 return response.content
                         case ImageBase64(base64=base64_str):
                             return base64_str
+                        case ImageBytes(bytes=bytes):
+                            return bytes
                         case _:
                             return None
 
-                images = list(filter(lambda c: isinstance(c, ImageBase64) or isinstance(c, ImageURL), content))
-
                 return {
                     "role": "user",
-                    "content": string_content,
-                    "images": [await image_content(image) for image in images] if len(images) > 0 else None,
+                    "images": [await image_content(content)],
                 }
 
             case AssistantMessage(content=ToolRequest(id=id, name=name, arguments=BaseModel() as arguments)):
@@ -233,6 +237,9 @@ class Ollama(Provider, ABC):
 
             case _:
                 raise ValueError(f"Invalid message type: {type(message)}")
+
+    def __repr__(self):
+        return f"Ollama({self.model})"
 
 
 @register_provider

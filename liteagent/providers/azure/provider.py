@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import uuid
 from functools import partial
 from typing import AsyncIterable, Type, Any, Optional
 
@@ -16,17 +17,19 @@ from liteagent.provider import Provider
 
 
 class AzureAI(Provider):
-    name: str = "azure_ai"
+    name: str
     args: dict = {}
 
     def __init__(
         self,
+        name: str = "AzureAI",
         client: Optional[ChatCompletionsClient] = None,
         model: str = "gpt-4o-mini",
         base_url: str = "https://models.inference.ai.azure.com",
         api_key: str = None,
         **kwargs
     ):
+        self.name = name
         self.client = client or ChatCompletionsClient(
             endpoint=base_url,
             credential=AzureKeyCredential(api_key),
@@ -111,14 +114,15 @@ class AzureAI(Provider):
                                 }
 
                             if tool_call.function.arguments:
-                                on_going_function['arguments'] = on_going_function['arguments'] + tool_call.function.arguments
+                                on_going_function['arguments'] = on_going_function[
+                                                                     'arguments'] + tool_call.function.arguments
 
                                 try:
                                     args = json.loads(on_going_function['arguments'])
                                     await message_stream.emit(AssistantMessage(
                                         content=ToolRequest(
                                             name=on_going_function['name'],
-                                            id=tool_call.id or "0",
+                                            id=tool_call.id or f'{uuid.uuid4()}',
                                             arguments=args
                                         )
                                     ))
@@ -218,6 +222,9 @@ class AzureAI(Provider):
         if self.client:
             await self.client.close()
 
+    def __repr__(self):
+        return f"{self.name}({self.model})"
+
 
 @register_provider
 def azureai(
@@ -232,5 +239,6 @@ def azureai(
         api_key=api_key,
         **kwargs
     )
+
 
 github = partial(azureai, api_key=os.getenv('GITHUB_TOKEN'))

@@ -1,7 +1,7 @@
 import asyncio
 import json
 import uuid
-from typing import AsyncIterable, Type, AsyncIterable
+from typing import Type, AsyncIterable
 
 from openai import AsyncOpenAI, NOT_GIVEN
 from openai.lib.streaming.chat import FunctionToolCallArgumentsDoneEvent, ContentDoneEvent, ChunkEvent
@@ -14,18 +14,19 @@ from liteagent.internal.cleanup import register_provider
 from liteagent.internal.memoized import MemoizedAsyncIterable
 from liteagent.logger import log
 from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, ImageURL, ImageBase64, \
-    MessageContent
+    MessageContent, ImagePath
 from liteagent.provider import Provider
 
 
 class OpenAICompatible(Provider):
-    name: str = "openai"
+    name: str
     args: dict = {}
 
-    def __init__(self, client: AsyncOpenAI, model: str = 'gpt-4o-mini', **kwargs):
+    def __init__(self, client: AsyncOpenAI, name: str = None, model: str = 'gpt-4o-mini', **kwargs):
         self.client = client
         self.model = model
         self.args = kwargs
+        self.name = name or "OpenAI"
 
         provider_logger = log.bind(provider=self.name)
         provider_logger.info("provider_initialized",
@@ -93,22 +94,26 @@ class OpenAICompatible(Provider):
         message_logger.debug("mapping_message", role=message.role, content_type=type(message.content).__name__)
         match message:
             case UserMessage(content=content):
-                def map_content(item: MessageContent) -> list[dict]:
+                async def map_content(item: MessageContent) -> list[dict]:
                     match item:
                         case ImageURL(url=url):
                             return [{"type": "image_url", "image_url": {"url": url}}]
                         case ImageBase64(base64=base64_str):
                             return [{"type": "image_base64", "image_base64": base64_str}]
+                        case ImagePath() as image:
+                            return [{"type": "image_url", "image_url": {
+                                "url": f"data:image/{image.image_type()};base64,{await image.as_base64()}"
+                            }}]
                         case str() as text:
                             return [{"type": "text", "text": text}]
                         case list() as content_list:
-                            return [mapped for c in content_list for mapped in map_content(c)]
+                            return [mapped for c in content_list for mapped in await map_content(c)]
                         case _:
                             raise ValueError(f"Invalid message type: {type(item)}")
 
                 return {
                     "role": "user",
-                    "content": map_content(content)
+                    "content": await map_content(content)
                 }
 
             case AssistantMessage(content=ToolRequest(id=id, name=name, arguments=BaseModel() as arguments)):
@@ -179,13 +184,15 @@ class OpenAICompatible(Provider):
         stream_logger.debug("creating_message_stream")
 
         message_stream: MemoizedAsyncIterable[Message] = MemoizedAsyncIterable[Message]()
-        assistant_stream: MemoizedAsyncIterable | None = None
-        event_count = 0
-        content_events = 0
-        tool_events = 0
 
         async def consume():
-            nonlocal message_stream, assistant_stream, event_count, content_events, tool_events
+            nonlocal message_stream
+
+            event_count = 0
+            content_events = 0
+            tool_events = 0
+
+            assistant_stream: MemoizedAsyncIterable | None = None
 
             stream_logger.debug("stream_consume_started")
 
@@ -212,6 +219,11 @@ class OpenAICompatible(Provider):
                                 await assistant_stream.emit(content)
 
                         case ContentDoneEvent(parsed=parsed) if parsed is not None:
+                            if assistant_stream:
+                                stream_logger.debug("closing_assistant_stream")
+                                await assistant_stream.close()
+                                assistant_stream = None
+
                             stream_logger.debug("content_done_event_received", parsed_type=type(parsed).__name__)
                             await message_stream.emit(AssistantMessage(content=parsed))
 
@@ -222,6 +234,11 @@ class OpenAICompatible(Provider):
                             arguments=arguments,
                             parsed_arguments=parsed_arguments,
                         ):
+                            if assistant_stream:
+                                stream_logger.debug("closing_assistant_stream")
+                                await assistant_stream.close()
+                                assistant_stream = None
+
                             tool_events += 1
 
                             tool_id = f'{uuid.uuid4()}'
@@ -258,6 +275,9 @@ class OpenAICompatible(Provider):
                 stream_logger.error("stream_processing_error",
                                     error=str(e),
                                     error_type=type(e).__name__)
+
+                await message_stream.close(reason=e)
+
                 raise
 
         asyncio.create_task(consume())
@@ -265,10 +285,14 @@ class OpenAICompatible(Provider):
 
         return message_stream
 
+    def __repr__(self):
+        return f"{self.name}({self.model})"
+
 
 @register_provider
 def openai_compatible(
     model: str,
+    name: str | None = None,
     client: AsyncOpenAI = None,
     base_url: str = None,
     api_key: str = None,
@@ -289,6 +313,7 @@ def openai_compatible(
                              max_retries=5)
 
     provider = OpenAICompatible(
+        name=name,
         client=client or AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,

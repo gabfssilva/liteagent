@@ -1,15 +1,14 @@
 import asyncio
 
 from liteagent import agent, chat
-from liteagent.providers import ollama
-from liteagent.tools import duckduckgo, files, terminal
+from liteagent.providers import github, openai
+from liteagent.tools import duckduckgo, vision
 
 
 @chat.terminal(logo="Chatbot")
-@agent(provider=ollama(), tools=[
-    duckduckgo,
-    files("/Users/gabrielfrancisco/Downloads/test"),
-    terminal("/Users/gabrielfrancisco/Downloads/test")
+@agent(provider=github(), tools=[
+    duckduckgo(),
+    vision(provider=openai(model='gpt-4.1'))
 ])
 async def chatbot() -> str: pass
 

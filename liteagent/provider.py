@@ -4,13 +4,8 @@ from typing import AsyncIterable, Type
 from .message import Message
 from .tool import Tool
 
+
 class Provider:
-    name: str
-
-    def __init__(self, **kwargs):
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-
     @abstractmethod
     def completion(
         self,

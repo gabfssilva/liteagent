@@ -40,7 +40,7 @@ class Anthropic(Provider):
             "input_schema": tool["function"]["parameters"]
         }, map(lambda tool: tool.definition, tools))) if len(tools) > 0 else NOT_GIVEN
 
-        parsed_messages = [ await self.map_message(message) for message in messages ]
+        parsed_messages = [await self.map_message(message) for message in messages]
 
         system = next((msg for msg in messages if isinstance(msg, SystemMessage)), None)
         system_content = system.content if system else NOT_GIVEN
@@ -168,8 +168,8 @@ class Anthropic(Provider):
                                 await assistant_stream.emit(event.text)
 
                         case event if (hasattr(event, "type") and event.type == "content_block_stop" and
-                                    hasattr(event, "content_block") and hasattr(event.content_block, "type") and
-                                    event.content_block.type == "tool_use"):
+                                       hasattr(event, "content_block") and hasattr(event.content_block, "type") and
+                                       event.content_block.type == "tool_use"):
                             tool_block = event.content_block
                             await message_stream.emit(AssistantMessage(
                                 content=ToolRequest(
@@ -180,7 +180,7 @@ class Anthropic(Provider):
                             ))
 
                         case event if (hasattr(event, "type") and event.type == "tool_use" and
-                                    hasattr(event, "tool_use")):
+                                       hasattr(event, "tool_use")):
                             await message_stream.emit(AssistantMessage(
                                 content=ToolRequest(
                                     name=event.tool_use.name,
@@ -214,6 +214,9 @@ class Anthropic(Provider):
         """
         if hasattr(self, 'client') and hasattr(self.client, 'close'):
             await self.client.close()
+
+    def __repr__(self):
+        return f"Anthropic({self.model})"
 
 
 @register_provider

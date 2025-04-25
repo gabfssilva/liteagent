@@ -43,6 +43,7 @@ def ollama(
 @register_provider
 def openai_compatible(
     model: str,
+    name: str | None = None,
     base_url: str = None,
     api_key: str = None,
     **kwargs
@@ -52,6 +53,7 @@ def openai_compatible(
         from liteagent.providers.openai.provider import openai_compatible
 
         return openai_compatible(
+            name=name,
             client=AsyncOpenAI(
                 api_key=api_key,
                 base_url=base_url,
@@ -69,7 +71,8 @@ def openai_compatible(
 
 @register_provider
 def azureai(
-    model: str = 'gpt-4o-mini',
+    model: str = 'gpt-4.1-mini',
+    name: str = "AzureAI",
     base_url: str = 'https://models.inference.ai.azure.com',
     api_key: str = None,
     **kwargs
@@ -77,6 +80,7 @@ def azureai(
     try:
         from liteagent.providers.azure.provider import AzureAI
         return AzureAI(
+            name=name,
             model=model,
             base_url=base_url,
             api_key=api_key,
@@ -114,12 +118,14 @@ def anthropic(
 
 openai = partial(
     openai_compatible,
+    name='OpenAI',
     model='gpt-4.1-mini',
     api_key=os.getenv('OPENAI_API_KEY')
 )
 
 openrouter = partial(
     openai_compatible,
+    name='OpenRouter',
     base_url='https://api.openrouter.ai/v1',
     model='openai/gpt-3.5-turbo',
     api_key=os.getenv('OPENROUTER_API_KEY'),
@@ -128,10 +134,11 @@ openrouter = partial(
 
 deepseek = partial(
     openai_compatible,
+    name='Deepseek',
     base_url='https://api.deepseek.com/v1',
     model='deepseek-chat',
     api_key=os.getenv('DEEPSEEK_API_KEY'),
     max_tokens=8192
 )
 
-github: partial[Provider] = partial(azureai, api_key=os.getenv('GITHUB_TOKEN'))
+github: partial[Provider] = partial(azureai, name="GitHub", api_key=os.getenv('GITHUB_TOKEN'))

@@ -19,10 +19,7 @@ class Session:
         *content: MessageContent | Message,
         **kwargs,
     ) -> List[Message]:
-        if kwargs:
-            if not self.agent.signature or not self.agent.user_prompt_template:
-                raise ValueError("Agent missing signature or prompt template.")
-
+        if kwargs and self.agent.user_prompt_template:
             bound = self.agent.signature.bind(**kwargs)
             bound.apply_defaults()
 
@@ -30,8 +27,11 @@ class Session:
                 UserMessage(content=self.agent.user_prompt_template.format(**bound.arguments))
             ]
 
+        if kwargs:
+            content = list(kwargs.values())
+
         if not content:
-            raise ValueError("No user content provided.")
+            raise ValueError("No content provided.")
 
         def to_message(c: MessageContent | Message) -> Message:
             return c if isinstance(c, Message) else UserMessage(content=c)
