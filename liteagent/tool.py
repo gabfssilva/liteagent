@@ -147,10 +147,20 @@ class Tool(ToolDef):
                 return await self.handler(**dump)
             elif is_method:
                 tool_logger.debug("executing_sync_method_in_thread")
-                return await asyncio.to_thread(self.handler, self, **dump)
+                result = await asyncio.to_thread(self.handler, self, **dump)
+
+                if inspect.isgenerator(result):
+                    return self._gen_to_async(result)
+
+                return result
             else:
                 tool_logger.debug("executing_sync_function_in_thread")
-                return await asyncio.to_thread(self.handler, **dump)
+                result = await asyncio.to_thread(self.handler, **dump)
+
+                if inspect.isgenerator(result):
+                    return self._gen_to_async(result)
+
+                return result
         except Exception as e:
             tool_logger.error("handler_execution_failed", error=str(e))
             raise
@@ -192,6 +202,14 @@ class Tool(ToolDef):
                 should_tell_user=True
             )
 
+    @staticmethod
+    async def _gen_to_async(generator):
+        while True:
+            try:
+                item = await asyncio.to_thread(next, generator)
+                yield item
+            except StopIteration:
+                break
 
 class Tools(ToolDef, ABC):
     def tools(self) -> List[Tool]:

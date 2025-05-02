@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import re
 import time
@@ -6,27 +7,37 @@ from typing import AsyncIterable
 
 from pydantic import JsonValue
 from rich.errors import MarkupError
-from textual import on
+from textual import on, events
 from textual.app import App, ComposeResult
-from textual.containers import VerticalScroll, Container, HorizontalScroll
+from textual.containers import VerticalScroll, Container, HorizontalScroll, Horizontal
 from textual.content import Content
 from textual.reactive import reactive, var
 from textual.widget import Widget
-from textual.widgets import Markdown, Input, Static, Pretty, TabbedContent
+from textual.widgets import Markdown, Input, Static, Pretty, TabbedContent, Label, Button, ListItem, ListView, Select, \
+    TextArea
 
 from liteagent import AssistantMessage, UserMessage, ToolRequest, Agent, ToolMessage, Tool, AgentDispatcherTool
+from liteagent.chat.textual.table import plot_table
 from liteagent.internal.memoized import MemoizedAsyncIterable
 from liteagent.message import ExecutionError, Message, AgentLike
 from liteagent.chat.textual.plotext import plot_stacked_bar
 
 
 class AppendableMarkdown(Static):
-    def __init__(self, content: str, refresh_rate: float = 0.5):
+    def __init__(
+        self,
+        content: str,
+        refresh_rate: float = 0.5,
+        finished: bool = False,
+    ):
         super().__init__(markup=False)
         self._chunks = asyncio.Queue()
         self._refresh_rate = refresh_rate
-        self._finished = False
+        self._finished = finished
         self._content = content
+
+    def content_as_str(self) -> str:
+        return self._content
 
     def compose(self) -> ComposeResult:
         yield Markdown(self._content)
@@ -38,6 +49,9 @@ class AppendableMarkdown(Static):
         while not self._finished:
             try:
                 await self.query_one(Markdown).update(self._content)
+                chat_view = self.query_ancestor(ChatView)
+                if chat_view:
+                    chat_view.scroll_end()
                 await asyncio.sleep(self._refresh_rate)
             except MarkupError:
                 continue
@@ -54,12 +68,11 @@ class AppendableMarkdown(Static):
 class UserMessageWidget(Static):
     def __init__(self, content: str, classes: str = "user-message"):
         super().__init__(classes=classes)
-        self.markdown = AppendableMarkdown(content=f"{content}")
+        self.markdown = AppendableMarkdown(content=f"{content}", finished=True)
         self.border_title = "👤"
 
     def compose(self) -> ComposeResult:
         yield self.markdown
-
 
 class AssistantMessageWidget(Static):
     def __init__(
@@ -71,14 +84,18 @@ class AssistantMessageWidget(Static):
         super().__init__(classes=classes)
         self.markdown = AppendableMarkdown(content="", refresh_rate=refresh_rate)
         self.border_title = "🤖"
-        self.border_subtitle = agent.name.replace("_", " ").title()
-        self.tooltip = f'{agent.provider}'
+        self.border_subtitle = f"📋 {agent.name.replace('_', ' ').title()}"
+        self.tooltip = f"{agent.provider}"
 
     def compose(self) -> ComposeResult:
         yield self.markdown
 
+    async def on_mouse_down(self, event: events.MouseDown) -> None:
+        if event.button == 3:  # Right click
+            self.app.copy_to_clipboard(self.markdown.content_as_str())
+            self.notify("Copied to clipboard! ✅", severity="information")
 
-class CollapsibleChatView(Static):
+class InternalChatView(Static):
     state = reactive("waiting")
     frame = reactive(0)
 
@@ -152,6 +169,20 @@ class CollapsibleChatView(Static):
                 await self.query_one(ChatView).mount(Markdown(f"error: {e}"))
 
         self.run_worker(do_process())
+
+
+class WidgetRenderer(Widget):
+    def __init__(self, message: AssistantMessage, *children: Widget):
+        super().__init__(*children, classes = "tool-message")
+        self._message = message
+        self._tool_use: ToolRequest = self._message.content
+        self.border_title = f"{self._tool_use.tool.emoji} {self._tool_use.name}"
+        self.tooltip = Content.from_text(self._tool_use.tool.description, markup=False)
+        self.id = f"{self._tool_use.name}_{self._tool_use.id}"
+        self.set_styles(border_title=self._tool_use.tool.emoji)
+
+    async def do_render(self, message: ToolMessage) -> None:
+        await self.mount(message.content)
 
 
 class ToolUseWidget(Static):
@@ -251,8 +282,16 @@ class ToolUseWidget(Static):
         await result.append(chunk)
 
     async def append_json(self, chunk: JsonValue) -> None:
+        data = []
+
+        if inspect.isasyncgen(chunk):
+            async for item in chunk:
+                data.append(item)
+        else:
+            data = chunk
+
         result = self.query_one(AppendableMarkdown)
-        json_string = json.dumps(chunk, indent=2)
+        json_string = json.dumps(data, indent=2)
 
         if len(json_string) > 1000:
             json_string = json_string[:1000] + "\n...[omitted]"
@@ -264,6 +303,7 @@ class ChatView(VerticalScroll):
     def __init__(self, agent: Agent, id: str = None):
         super().__init__(id=id)
         agent.with_tool(plot_stacked_bar)
+        agent.with_tool(plot_table)
         self._agent = agent
 
     async def process(self, messages: AsyncIterable[Message], inner: bool) -> None:
@@ -290,13 +330,16 @@ class ChatView(VerticalScroll):
 
                 case AssistantMessage(
                     content=ToolRequest(id=tool_id, arguments=arguments, tool=AgentDispatcherTool() as tool)):
-                    await self.mount(CollapsibleChatView(
+                    await self.mount(InternalChatView(
                         id=f"{tool.name}_{tool_id}",
                         name=tool.name,
                         prompt=arguments,
                         agent=self._agent,
                         classes="tool-message-inner" if inner else "tool-message",
                     ))
+
+                case AssistantMessage(content=ToolRequest(tool=tool)) as message if tool.response_type == Widget:
+                    await self.mount(WidgetRenderer(message))
 
                 case AssistantMessage(content=ToolRequest(id=tool_id, arguments=arguments, tool=tool)):
                     await self.mount(ToolUseWidget(
@@ -307,11 +350,11 @@ class ChatView(VerticalScroll):
                     ))
 
                 case ToolMessage() as tool_message if isinstance(tool_message.content, Widget):
-                    widget = self.query_one(f"#{tool_message.name}_{tool_message.id}", ToolUseWidget)
-                    await widget.append_widget(tool_message.content)
+                    widget = self.query_one(f"#{tool_message.name}_{tool_message.id}", WidgetRenderer)
+                    await widget.do_render(tool_message)
 
                 case ToolMessage(tool=AgentDispatcherTool()) as tool_message:
-                    widget = self.query_one(f"#{tool_message.name}_{tool_message.id}", CollapsibleChatView)
+                    widget = self.query_one(f"#{tool_message.name}_{tool_message.id}", InternalChatView)
                     self.run_worker(widget.process(tool_message.content))
 
                 case ToolMessage() as message:
@@ -329,6 +372,8 @@ class ChatView(VerticalScroll):
                         tool_use_widget.complete(is_error)
 
                     self.run_worker(process_result(message))
+
+            self.scroll_end()
 
 
 class ChatApp(App):
@@ -419,7 +464,7 @@ class ChatApp(App):
         border: round $accent;
         background: $background;
     }
-    
+ 
     ToolUseWidget Collapsible {
         background: $background;
     }
@@ -491,6 +536,7 @@ class ChatApp(App):
         event.input.clear()
         prompt = event.value
         chat_view.mount(UserMessageWidget(prompt))
+        chat_view.scroll_end()
         self.run_worker(self.inference(prompt))
         self.query_one(Input).focus()
 

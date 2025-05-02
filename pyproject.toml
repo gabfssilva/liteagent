@@ -3,7 +3,7 @@ name = "liteagent"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = "==3.12.*"
 dependencies = [
     "asyncstdlib>=3.13.1",
     "httpx>=0.24.0",

@@ -62,6 +62,14 @@ class Session:
 
         return reordered
 
+    async def summarize(self, prompt: str = "Summarize in detail all the conversation so far."):
+        async for message in self(UserMessage(content=prompt)):
+            yield message
+
+        summarization = list(filter(lambda m: m.role == 'assistant', self.conversation))[-1]
+        self.reset()
+        self.conversation.append(summarization)
+
     def __call__(
         self,
         *content: MessageContent | Message,

@@ -66,6 +66,24 @@ class ConfluenceTools(Tools):
         }
 
     @tool(emoji="📝")
+    def list_pages(
+        self,
+        space: str,
+        limit: int | None,
+    ):
+        """ Retrieve the pages from a specific space """
+
+        pages = self.client.get_all_pages_from_space(space, start=0, limit=limit, expand='version')
+
+        for page in pages:
+            yield {
+                "id": page["id"],
+                "title": page["title"],
+                "parent_id": page["ancestors"][0]["id"] if page["ancestors"] else None,
+                "version": page["version"]["number"],
+            }
+
+    @tool(emoji="📝")
     def create_page(self, space: str, title: str, body: str, parent_id: Optional[str]) -> dict:
         """
         Create a new Confluence page.
@@ -140,23 +158,42 @@ class ConfluenceTools(Tools):
         self,
         space_type: Literal['global', 'personal'] | None = Field(..., description="Space type. If none, defaults to 'global'."),
         space_status: Literal['current', 'archived'] | None = Field(..., description="Space status. If none, defaults to 'current'."),
-        contains_one_of: list[str] = Field(..., description="A list of strings that will be used to filter the spaces by name."),
+        contains_one_of: list[str] = Field(..., description="A list of strings used to filter spaces by name."),
     ):
-        """ Retrieve information about spaces based on their name. """
+        """Retrieve information about spaces based on their name."""
+        space_type = space_type or 'global'
+        space_status = space_status or 'current'
 
-        result = []
+        cursor = 0
+        page_size = 50
 
-        for space in self.client.get_all_spaces(
-            limit=1000,
-            space_type=space_type,
-            space_status=space_status,
-            expand='description.plain',
-        )['results']:
-            for has in contains_one_of:
-                if has.lower() in space['name'].lower():
-                    result.append(space)
+        while True:
+            result = self.client.get_all_spaces(
+                start=cursor,
+                limit=page_size,
+                space_type=space_type,
+                space_status=space_status,
+                expand='description.plain'
+            )
 
-        return result
+            spaces = result['results']
+
+            has_next = spaces['_links'].get('next', None)
+
+            if not has_next:
+                break
+
+            for space in spaces:
+                name = space['name']
+
+                if any(matching_name.lower() in name.lower() for matching_name in contains_one_of):
+                    yield {
+                        "id": space['id'],
+                        "name": name,
+                        "key": space['key'],
+                    }
+
+            cursor = cursor + page_size
 
 @depends_on({
     "atlassian": "atlassian-python-api"

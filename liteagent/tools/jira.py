@@ -1,5 +1,8 @@
-import asyncio
-from typing import Optional, TYPE_CHECKING, Literal, List
+import datetime
+import statistics
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Optional, TYPE_CHECKING, Literal, List, Counter, Any, TypedDict
 
 from liteagent.internal import depends_on
 
@@ -9,6 +12,187 @@ if TYPE_CHECKING:
 from liteagent import Tools, tool
 
 
+@dataclass
+class ChangeLogEntry:
+    field: str
+    from_: Optional[str]
+    to: Optional[str]
+    changed_at: str
+    author: Optional[str]
+
+@dataclass
+class Issue:
+    key: str
+    summary: str
+    status: str
+    status_category: str
+    assignee: Optional[str]
+    assigneeEmail: Optional[str]
+    reporter: Optional[str]
+    created: str
+    updated: str
+    duedate: Optional[str]
+    url: str
+    description: str
+    changelog: List[ChangeLogEntry]
+    comments: List[str]
+
+    def is_overdue(self, now = datetime.datetime.now(datetime.timezone.utc)) -> bool:
+        if not self.duedate:
+            return False
+
+        due_date = datetime.datetime.fromisoformat(self.duedate + "T00:00:00").replace(tzinfo=datetime.timezone.utc)
+        return due_date < now and self.status_category.lower() != "done"
+
+    @classmethod
+    def from_sdk(cls, issue: dict) -> 'Issue':
+        def extract_changelog():
+            for history in issue.get("changelog", {}).get("histories", []):
+                for item in history.get("items", []):
+                    yield ChangeLogEntry(
+                        field=item.get("field"),
+                        from_=item.get("fromString"),
+                        to=item.get("toString"),
+                        changed_at=history.get("created"),
+                        author=history.get("author", {}).get("displayName")
+                    )
+
+        return cls(
+            key=issue["key"],
+            summary=issue["fields"]["summary"],
+            status=issue["fields"]["status"]["name"],
+            status_category=issue["fields"]["status"]["statusCategory"]["key"],
+            assignee=issue["fields"]["assignee"]["displayName"] if issue["fields"]["assignee"] else None,
+            assigneeEmail=issue["fields"]["assignee"].get("emailAddress") if issue["fields"].get("assignee") else None,
+            reporter=issue["fields"]["reporter"]["displayName"] if issue["fields"].get("reporter") else None,
+            created=issue["fields"]["created"],
+            updated=issue["fields"]["updated"],
+            duedate=issue["fields"]["duedate"],
+            url=f"{issue['self'].split('/rest/')[0]}/browse/{issue['key']}",
+            description=issue["fields"].get("description", ""),
+            changelog=list(extract_changelog()),
+            comments=[
+                c["body"] for c in issue["fields"].get("comment", {}).get("comments", [])
+            ]
+        )
+
+@dataclass
+class Issues:
+    issues: List[Issue]
+    now: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
+
+    @staticmethod
+    def _parse_dt(raw: str) -> datetime.datetime:
+        return datetime.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+
+    @property
+    def lead_times(self) -> List[float]:
+        times = []
+        for issue in self.issues:
+            created = self._parse_dt(issue.created)
+            resolved = next(
+                (self._parse_dt(c.changed_at) for c in issue.changelog if c.field == "resolution" and c.to),
+                None
+            )
+            if resolved:
+                times.append((resolved - created).total_seconds() / 3600)
+        return times
+
+    def cycle_times(self, started_status: str = "In Progress") -> List[float]:
+        times = []
+        for issue in self.issues:
+            start = next((self._parse_dt(c.changed_at) for c in issue.changelog if c.field == "status" and c.to == started_status), None)
+            end = next((self._parse_dt(c.changed_at) for c in issue.changelog if c.field == "resolution" and c.to), None)
+            if start and end:
+                times.append((end - start).total_seconds() / 3600)
+        return times
+
+    @property
+    def throughput(self) -> int:
+        return sum(1 for i in self.issues if any(c.field == "resolution" and c.to for c in i.changelog))
+
+    def bottleneck_stages(self, threshold_hours: float = 48.0) -> dict[str, dict]:
+        stage_times = defaultdict(list)
+        for issue in self.issues:
+            last_time = self._parse_dt(issue.created)
+            last_status = None
+            for c in issue.changelog:
+                if c.field == "status" and c.to:
+                    now_time = self._parse_dt(c.changed_at)
+                    if last_status:
+                        stage_times[last_status].append((now_time - last_time).total_seconds() / 3600)
+                    last_time = now_time
+                    last_status = c.to
+            if last_status:
+                stage_times[last_status].append((self.now - last_time).total_seconds() / 3600)
+
+        return {
+            k: {
+                "average_hours": round(sum(v) / len(v), 2),
+                "count": len(v),
+                "is_bottleneck": (sum(v) / len(v)) > threshold_hours
+            }
+            for k, v in stage_times.items()
+        }
+
+    @property
+    def reopen_rate(self) -> dict:
+        reopened = 0
+        resolved = 0
+        for issue in self.issues:
+            was_closed = False
+            reopened_later = False
+            for c in issue.changelog:
+                if c.field == "status":
+                    to = (c.to or "").lower()
+                    if to in {"done", "closed", "resolved"}:
+                        was_closed = True
+                    elif to == "reopened" and was_closed:
+                        reopened_later = True
+            if was_closed:
+                resolved += 1
+                if reopened_later:
+                    reopened += 1
+        return {
+            "resolved_issues": resolved,
+            "reopened_issues": reopened,
+            "reopen_rate_percent": round((reopened / resolved) * 100, 2) if resolved else None
+        }
+
+    @property
+    def average_stage_count(self) -> float:
+        stage_counts = [
+            len({c.to for c in i.changelog if c.field == "status" and c.to})
+            for i in self.issues
+        ]
+        return round(sum(stage_counts) / len(stage_counts), 2) if stage_counts else 0.0
+
+    def cumulative_flow_data(self, days: int, started_at: Optional[datetime.datetime] = None):
+        started_at = started_at or self.now - datetime.timedelta(days=days)
+        snapshots = defaultdict(lambda: Counter())
+        for issue in self.issues:
+            timeline = [(self._parse_dt(issue.created), issue.status)]
+            for c in issue.changelog:
+                if c.field == "status" and c.to:
+                    timeline.append((self._parse_dt(c.changed_at), c.to))
+            timeline.sort()
+            for i in range(days + 1):
+                day = (started_at + datetime.timedelta(days=i)).date()
+                current = timeline[0][1]
+                for t, s in timeline:
+                    if t.date() <= day:
+                        current = s
+                    else:
+                        break
+                snapshots[day][current] += 1
+        return [
+            {"date": day.isoformat(), "status_counts": dict(counter)}
+            for day, counter in sorted(snapshots.items())
+        ]
+
+    def overdue_issues(self) -> List[Issue]:
+        return list(filter(lambda i: i.is_overdue(self.now), self.issues))
+
 class JiraTools(Tools):
     client: 'Jira'
 
@@ -16,104 +200,19 @@ class JiraTools(Tools):
         self.client = client
 
     @tool(emoji="🔍")
-    def search_issues(self, jql: str, limit: int = 25):
-        """
-        Search Jira issues using a JQL query.
-
-        How to use:
-        -----------
-        This method lets you run JQL (Jira Query Language) to retrieve issues filtered by custom criteria.
-
-        JQL supports filtering by fields such as:
-            - project, issueType, priority
-            - status, resolution, fixVersion
-            - created, updated, due
-            - assignee, reporter, labels, custom fields
-
-        ### Working with the `assignee` field:
-
-        You can match assignees using:
-          • **Exact match**:
-            `assignee = "John Doe"`
-            `assignee = "john.doe@example.com"` *(cloud may require accountId instead)*
-
-          • **Account ID** (preferred in Jira Cloud):
-            `assignee = 5b10a2844c20165700ede21g`
-
-          • **Dynamic function**:
-            `assignee = currentUser()`
-
-          • **Unassigned issues**:
-            `assignee is EMPTY`
-
-          • **Multiple users**:
-            `assignee IN ("John Doe", "Jane Smith")`
-
-          • **Partial match (if enabled)**:
-            `assignee ~ "john"` *(matches name or email fragment)*
-
-        ### Other useful fields and examples:
-
-        - All open bugs in a project:
-            `project = BUGS AND status != Done AND issuetype = Bug`
-
-        - Issues created in the last 7 days:
-            `created >= -7d`
-
-        - Issues updated by a specific user:
-            `updatedBy = "john.doe@example.com"`
-
-        - Issues with a specific label:
-            `labels = "infra"`
-
-        - Full-text search in summary or description:
-            `summary ~ "timeout"`
-            `description ~ "performance degradation"`
-
-        ### Example usage:
-
-            tools.search_issues(
-                jql='project = "ENG" AND assignee in (currentUser(), "john.doe@example.com") AND status != Done',
-                limit=10
-            )
-
-        Notes:
-            - Strings with spaces must be quoted.
-            - Use `IN`, `=`, `!=`, `~`, `!~`, `IS EMPTY`, and `IS NOT EMPTY` to construct expressive queries.
-            - Functions like `startOfDay()`, `endOfWeek()`, `currentUser()`, and `membersOf()` are supported.
-        """
-        issues = self.client.jql(jql, limit=limit).get("issues", [])
-
-        return [{
-            "key": issue["key"],
-            "summary": issue["fields"]["summary"],
-            "status": issue["fields"]["status"]["name"],
-            "assignee": issue["fields"]["assignee"]["displayName"] if issue["fields"]["assignee"] else None,
-            "assigneeEmail": issue["fields"]["assignee"]["emailAddress"] if issue["fields"]["assignee"] else None,
-            "reporter": issue["fields"]["reporter"]["displayName"] if issue["fields"]["reporter"] else None,
-            "created": issue["fields"]["created"],
-            "updated": issue["fields"]["updated"],
-            "url": f"{self.client.url}/browse/{issue['key']}",
-            "description": issue["fields"].get("description", ""),
-        } for issue in issues]
+    def search_issues(self, jql: str):
+        """ Search Jira issues using a JQL query. """
+        yield from self._paginated_issues(jql)
 
     @tool(emoji="🔍")
-    def get_issue(self, issue_key: str) -> dict:
-        """
-        Retrieve detailed information for a single Jira issue.
-        """
-        issue = self.client.issue(issue_key)
-        return {
-            "key": issue["key"],
-            "summary": issue["fields"]["summary"],
-            "status": issue["fields"]["status"]["name"],
-            "assignee": issue["fields"]["assignee"]["displayName"] if issue["fields"]["assignee"] else None,
-            "description": issue["fields"].get("description"),
-            "url": f"{self.client.url}/browse/{issue['key']}",
-            "created": issue["fields"]["created"],
-            "updated": issue["fields"]["updated"],
-            "comments": [c["body"] for c in issue["fields"].get("comment", {}).get("comments", [])]
-        }
+    def get_issue(self, issue_key: str) -> Issue | str:
+        """ Retrieve a single Jira issue. """
+        issue = self.client.issue(issue_key, expand="changelog")
+
+        if not issue:
+            return f"No issue with key '{issue_key}' found."
+
+        return Issue.from_sdk(issue)
 
     @tool(emoji="🐛")
     def create_issue(self, project: str, summary: str, description: str, issuetype: str) -> str:
@@ -125,6 +224,26 @@ class JiraTools(Tools):
             "issuetype": {"name": issuetype}
         })
         return issue["key"]
+
+    @tool(emoji="📝")
+    def update_issue(self, issue_key: str, fields: List[TypedDict("Content", {
+        "field": Literal['summary', 'description'],
+        "new_value": str,
+    })]) -> str:
+        """ Update an existing issue in Jira. """
+
+        issue = self.client.issue(issue_key)
+        if not issue:
+            return f"No issue with key '{issue_key}' found."
+
+        self.client.update_issue(
+            issue_key=issue_key,
+            update={
+                "fields": { f["field"]: f["new_value"] for f in fields }
+            }
+        )
+
+        return "Issue successfully updated."
 
     @tool(emoji="🎭")
     def transition_issue(self, issue_key: str, transition_name: str):
@@ -178,264 +297,97 @@ class JiraTools(Tools):
         """
         return self.client.user_find_by_user_string(query=query)
 
-    @tool(emoji="⏱️")
-    def project_lead_time(self, project_key: str, days: int = 30) -> dict:
+    @tool(emoji='📊')
+    def project_metrics(
+        self,
+        project_key: str,
+        metrics: List[Literal[
+            "lead_time",
+            "cycle_time",
+            "throughput",
+            "delivery_predictability",
+            "bottleneck_stages",
+            "reopen_rate",
+            "overdue_issues",
+            "average_stage_count",
+            "cumulative_flow_data"
+        ]],
+        days: int = 30,
+        started_status: str = "In Progress",
+        threshold_hours: float = 48.0
+    ) -> dict[str, dict]:
         """
-        Calculate average lead time (created → resolved) for issues in a project.
+        Extract the specified metrics for the given project.
+        Before calling this tool, check the available statuses for the project via `list_project_statuses`.
         """
-        jql = f'project = "{project_key}" AND created >= -{days}d AND resolutiondate IS NOT EMPTY'
-        issues = self.client.jql(jql, limit=1000).get("issues", [])
+        now = datetime.datetime.now(datetime.timezone.utc)
+        start_date = now - datetime.timedelta(days=days)
 
-        import datetime
-        lead_times = []
-
-        for issue in issues:
-            created = issue["fields"].get("created")
-            resolved = issue["fields"].get("resolutiondate")
-            if created and resolved:
-                dt_created = datetime.datetime.fromisoformat(created.replace("Z", "+00:00"))
-                dt_resolved = datetime.datetime.fromisoformat(resolved.replace("Z", "+00:00"))
-                lead_times.append((dt_resolved - dt_created).total_seconds() / 3600)  # hours
-
-        return {
-            "issue_count": len(lead_times),
-            "average_lead_time_hours": round(sum(lead_times) / len(lead_times), 2) if lead_times else None
-        }
-
-    @tool(emoji="🔄")
-    def project_cycle_time(self, project_key: str, days: int = 30, started_status: str = "In Progress") -> dict:
-        """
-        Estimate cycle time by checking when issues transitioned to 'In Progress' and were resolved.
-        """
-        jql = f'project = "{project_key}" AND created >= -{days}d AND resolutiondate IS NOT EMPTY'
-        issues = self.client.jql(jql, limit=1000, expand="changelog").get("issues", [])
-
-        import datetime
-        cycle_times = []
-
-        for issue in issues:
-            changelog = issue.get("changelog", {}).get("histories", [])
-            start_time = None
-
-            for entry in changelog:
-                for item in entry.get("items", []):
-                    if item["field"] == "status" and item["toString"] == started_status:
-                        start_time = entry["created"]
-                        break
-                if start_time:
-                    break
-
-            resolved = issue["fields"].get("resolutiondate")
-            if start_time and resolved:
-                dt_started = datetime.datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-                dt_resolved = datetime.datetime.fromisoformat(resolved.replace("Z", "+00:00"))
-                cycle_times.append((dt_resolved - dt_started).total_seconds() / 3600)
-
-        return {
-            "issue_count": len(cycle_times),
-            "average_cycle_time_hours": round(sum(cycle_times) / len(cycle_times), 2) if cycle_times else None
-        }
-
-    @tool(emoji="🐌")
-    def bottleneck_stages(self, project_key: str, days: int = 30, threshold_hours: float = 48.0) -> dict:
-        """
-        Identify bottleneck workflow stages where issues spend more time than a threshold.
-        """
         jql = f'project = "{project_key}" AND created >= -{days}d'
-        issues = self.client.jql(jql, limit=1000, expand="changelog").get("issues", [])
+        issues = self._all_issues(jql)
 
-        from collections import defaultdict
-        import datetime
+        results: dict[str, Any] = {}
 
-        stage_times = defaultdict(list)
+        for metric in metrics:
+            match metric:
+                case "lead_time":
+                    values = issues.lead_times
+                    results["lead_time"] = {
+                        "issue_count": len(values),
+                        "average_lead_time_hours": round(sum(values) / len(values), 2) if values else None
+                    }
 
-        for issue in issues:
-            changelog = issue.get("changelog", {}).get("histories", [])
-            previous_time = datetime.datetime.fromisoformat(issue["fields"]["created"].replace("Z", "+00:00"))
-            previous_status = "Created"
+                case "delivery_predictability":
+                    values = issues.lead_times
+                    results["delivery_predictability"] = {
+                        "issue_count": len(values),
+                        "std_dev_lead_time_hours": round(statistics.stdev(values), 2) if len(values) > 1 else None
+                    }
 
-            for change in changelog:
-                change_time = datetime.datetime.fromisoformat(change["created"].replace("Z", "+00:00"))
-                for item in change["items"]:
-                    if item["field"] == "status":
-                        time_spent = (change_time - previous_time).total_seconds() / 3600
-                        stage_times[previous_status].append(time_spent)
-                        previous_time = change_time
-                        previous_status = item["toString"]
+                case "cycle_time":
+                    values = issues.cycle_times(started_status)
+                    results["cycle_time"] = {
+                        "issue_count": len(values),
+                        "average_cycle_time_hours": round(sum(values) / len(values), 2) if values else None
+                    }
 
-        # Average time in each status
-        return {
-            status: {
-                "average_hours": round(sum(times)/len(times), 2),
-                "count": len(times),
-                "is_bottleneck": (sum(times)/len(times)) > threshold_hours
-            }
-            for status, times in stage_times.items()
-        }
+                case "throughput":
+                    results["throughput"] = {
+                        "resolved_issues": issues.throughput,
+                        "start": f"-{days}d",
+                        "end": "now"
+                    }
 
-    @tool(emoji="📈")
-    def throughput(self, project_key: str, days: int = 30) -> dict:
-        """
-        Count how many issues were resolved in the last X days.
-        """
-        jql = f'project = "{project_key}" AND resolutiondate >= -{days}d'
-        issues = self.client.jql(jql, limit=1000).get("issues", [])
-        return {
-            "resolved_issues": len(issues),
-            "start": f"-{days}d",
-            "end": "now"
-        }
+                case "bottleneck_stages":
+                    results["bottleneck_stages"] = issues.bottleneck_stages(threshold_hours)
 
-    @tool(emoji="🔁")
-    def reopen_rate(self, project_key: str, days: int = 90) -> dict:
-        """
-        Calculate the percentage of issues that were reopened after being resolved.
-        """
-        jql = f'project = "{project_key}" AND created >= -{days}d'
-        issues = self.client.jql(jql, limit=1000, expand="changelog").get("issues", [])
+                case "reopen_rate":
+                    results["reopen_rate"] = issues.reopen_rate
 
-        reopened_count = 0
-        resolved_count = 0
+                case "overdue_issues":
+                    results["overdue_issues"] = [
+                        {
+                            "key": i.key,
+                            "summary": i.summary,
+                            "due_date": f"{i.duedate}T00:00:00+00:00",
+                            "url": i.url
+                        }
+                        for i in issues.overdue_issues()
+                    ]
 
-        for issue in issues:
-            changelog = issue.get("changelog", {}).get("histories", [])
-            reopened = False
-            resolved = False
+                case "average_stage_count":
+                    results["average_stage_count"] = {
+                        "issue_count": len(issues.issues),
+                        "average_stage_transitions": issues.average_stage_count
+                    }
 
-            for entry in changelog:
-                for item in entry.get("items", []):
-                    if item["field"] == "status":
-                        to_status = item.get("toString", "").lower()
-                        if to_status in ["done", "resolved", "closed"]:
-                            resolved = True
-                        if to_status == "reopened":
-                            reopened = True
+                case "cumulative_flow_data":
+                    results["cumulative_flow_data"] = issues.cumulative_flow_data(days, started_at=start_date)
 
-            if resolved:
-                resolved_count += 1
-                if reopened:
-                    reopened_count += 1
+                case _:
+                    raise ValueError(f"Unknown metric: {metric}")
 
-        return {
-            "resolved_issues": resolved_count,
-            "reopened_issues": reopened_count,
-            "reopen_rate_percent": round((reopened_count / resolved_count) * 100, 2) if resolved_count else None
-        }
-
-    @tool(emoji="📊")
-    def average_stage_count(self, project_key: str, days: int = 30) -> dict:
-        """
-        Estimate how many workflow stages each issue passes through on average.
-        """
-        jql = f'project = "{project_key}" AND created >= -{days}d'
-        issues = self.client.jql(jql, limit=1000, expand="changelog").get("issues", [])
-
-        stage_counts = []
-
-        for issue in issues:
-            changelog = issue.get("changelog", {}).get("histories", [])
-            statuses = set()
-
-            for entry in changelog:
-                for item in entry.get("items", []):
-                    if item["field"] == "status":
-                        statuses.add(item["toString"])
-
-            stage_counts.append(len(statuses))
-
-        return {
-            "issue_count": len(stage_counts),
-            "average_stage_transitions": round(sum(stage_counts) / len(stage_counts), 2) if stage_counts else None
-        }
-
-    @tool(emoji="⏰")
-    def overdue_issues(self, project_key: str) -> list[dict]:
-        """
-        List issues that are past their due date.
-        """
-        import datetime
-
-        jql = f'project = "{project_key}" AND duedate IS NOT EMPTY AND statusCategory != Done'
-        issues = self.client.jql(jql, limit=1000).get("issues", [])
-
-        overdue = []
-        now = datetime.datetime.utcnow()
-
-        for issue in issues:
-            due = issue["fields"].get("duedate")
-            if due:
-                due_date = datetime.datetime.fromisoformat(due)
-                if due_date < now:
-                    overdue.append({
-                        "key": issue["key"],
-                        "summary": issue["fields"]["summary"],
-                        "due_date": due_date.isoformat(),
-                        "url": f"{self.client.url}/browse/{issue['key']}"
-                    })
-
-        return overdue
-
-
-    @tool(emoji="📉")
-    def delivery_predictability(self, project_key: str, days: int = 60) -> dict:
-        """
-        Compute standard deviation of lead time to measure delivery consistency.
-        """
-        import datetime
-        import statistics
-
-        jql = f'project = "{project_key}" AND created >= -{days}d AND resolutiondate IS NOT EMPTY'
-        issues = self.client.jql(jql, limit=1000).get("issues", [])
-
-        lead_times = []
-        for issue in issues:
-            created = issue["fields"].get("created")
-            resolved = issue["fields"].get("resolutiondate")
-            if created and resolved:
-                dt_created = datetime.datetime.fromisoformat(created.replace("Z", "+00:00"))
-                dt_resolved = datetime.datetime.fromisoformat(resolved.replace("Z", "+00:00"))
-                hours = (dt_resolved - dt_created).total_seconds() / 3600
-                lead_times.append(hours)
-
-        return {
-            "issue_count": len(lead_times),
-            "std_dev_lead_time_hours": round(statistics.stdev(lead_times), 2) if len(lead_times) > 1 else None
-        }
-
-
-    @tool(emoji="🔥")
-    def burndown_trend(self, board_id: int, sprint_id: int) -> dict:
-        """
-        Retrieve burndown data for a specific sprint using the Agile API.
-        """
-
-        import datetime
-        import re
-
-        data = self.client.get(f'rest/greenhopper/1.0/rapid/charts/sprintreport?rapidViewId={board_id}&sprintId={sprint_id}')
-        if not data or "contents" not in data:
-            raise ValueError("Invalid board or sprint ID.")
-
-        completed = []
-        estimate_field = data.get("contents", {}).get("completedIssuesInitialEstimateSum", {})
-        if "text" in estimate_field:
-            completed.append({"day": "end", "estimate": estimate_field["text"]})
-
-        issues = data["contents"].get("completedIssues", [])
-        trend = []
-
-        for issue in issues:
-            est = issue.get("estimateStatistic", {}).get("statFieldValue", {}).get("value", 0)
-            key = issue.get("key")
-            trend.append({"issue": key, "estimate": est})
-
-        return {
-            "sprint": data["sprint"]["name"],
-            "start_date": data["sprint"].get("startDate"),
-            "end_date": data["sprint"].get("endDate"),
-            "completed_estimate": completed,
-            "burndown_issues": trend
-        }
+        return results
 
     @tool(emoji="📋")
     def list_project_statuses(self, project_key: str, days: int = 90) -> list[str]:
@@ -478,96 +430,16 @@ class JiraTools(Tools):
 
         return results
 
-    @tool(emoji="🧮")
-    def cumulative_flow_data(self, project_key: str, days: int = 30) -> list[dict]:
-        """
-        Prepare cumulative flow data: how many issues were in each status per day.
-        """
-        import datetime
-        from collections import defaultdict, Counter
+    def _all_issues(self, jql: str, expand: str = "changelog") -> Issues:
+        return Issues(issues=list(self._paginated_issues(jql, expand)))
 
-        end_date = datetime.datetime.now(datetime.UTC)
-        start_date = end_date - datetime.timedelta(days=days)
-        jql = f'project = "{project_key}" AND created >= -{days}d'
-        issues = self.client.jql(jql, limit=1000, expand="changelog").get("issues", [])
-
-        daily_status = defaultdict(lambda: Counter())
+    def _paginated_issues(self, jql: str, expand: str = "changelog"):
+        response = self.client.enhanced_jql(jql, expand=expand)
+        issues = response.get("issues", [])
 
         for issue in issues:
-            created = datetime.datetime.fromisoformat(issue["fields"]["created"].replace("Z", "+00:00"))
-            changelog = issue.get("changelog", {}).get("histories", [])
+            yield Issue.from_sdk(issue)
 
-            # Build timeline of status changes
-            timeline = [(created, issue["fields"]["status"]["name"])]
-            for change in changelog:
-                for item in change.get("items", []):
-                    if item["field"] == "status":
-                        change_time = datetime.datetime.fromisoformat(change["created"].replace("Z", "+00:00"))
-                        timeline.append((change_time, item["toString"]))
-
-            timeline.sort()
-
-            current_status = timeline[0][1]
-            for i in range(days + 1):
-                day = start_date + datetime.timedelta(days=i)
-                for t, s in timeline:
-                    if t.date() <= day.date():
-                        current_status = s
-                    else:
-                        break
-                daily_status[day.date()][current_status] += 1
-
-        return [{
-            "date": day.isoformat(),
-            "status_counts": dict(counter)
-        } for day, counter in sorted(daily_status.items())]
-
-    @tool(emoji="📊")
-    async def project_metrics_summary(
-        self,
-        project_key: str,
-        metrics: List[Literal[
-            "lead_time",
-            "cycle_time",
-            "throughput",
-            "delivery_predictability",
-            "bottleneck_stages",
-            "reopen_rate",
-            "overdue_issues",
-            "average_stage_count",
-            "cumulative_flow_data"
-        ]],
-        days: int = 30,
-        started_status: str = "In Progress",
-        threshold_hours: float = 48.0
-    ) -> dict:
-        """
-        Fetch multiple project metrics concurrently in a single call.
-        """
-        tasks = {}
-
-        if "cumulative_flow_data" in metrics:
-            tasks["cumulative_flow_data"] = self.cumulative_flow_data(project_key=project_key, days=days)
-        if "lead_time" in metrics:
-            tasks["lead_time"] = self.project_lead_time(project_key=project_key, days=days)
-        if "cycle_time" in metrics:
-            tasks["cycle_time"] = self.project_cycle_time(project_key=project_key, days=days, started_status=started_status)
-        if "throughput" in metrics:
-            tasks["throughput"] = self.throughput(project_key=project_key, days=days)
-        if "delivery_predictability" in metrics:
-            tasks["delivery_predictability"] = self.delivery_predictability(project_key=project_key, days=days)
-        if "bottleneck_stages" in metrics:
-            tasks["bottleneck_stages"] = self.bottleneck_stages(project_key=project_key, days=days, threshold_hours=threshold_hours)
-        if "reopen_rate" in metrics:
-            tasks["reopen_rate"] = self.reopen_rate(project_key=project_key, days=days)
-        if "overdue_issues" in metrics:
-            tasks["overdue_issues"] = self.overdue_issues(project_key=project_key)
-        if "average_stage_count" in metrics:
-            tasks["average_stage_count"] = self.average_stage_count(project_key=project_key, days=days)
-
-        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
-
-        return {name: result for name, result in zip(tasks.keys(), results)}
 
 @depends_on({ "atlassian": "atlassian-python-api" })
 def jira(client: 'Jira') -> Tools:
