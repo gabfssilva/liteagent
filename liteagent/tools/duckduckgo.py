@@ -13,7 +13,7 @@ from liteagent import tool, Tools
 class DuckDuckGo(Tools):
     def __init__(self, client: 'DDGS' = None):
         from duckduckgo_search import DDGS
-        
+
         self.client = client or DDGS()
 
     @tool(emoji='🔎')

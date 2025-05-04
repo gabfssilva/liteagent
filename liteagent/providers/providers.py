@@ -50,9 +50,9 @@ def openai_compatible(
 ) -> Provider:
     try:
         from openai import AsyncOpenAI
-        from liteagent.providers.openai.provider import openai_compatible
+        from liteagent.providers.openai.provider import OpenAICompatible
 
-        return openai_compatible(
+        return OpenAICompatible(
             name=name,
             client=AsyncOpenAI(
                 api_key=api_key,

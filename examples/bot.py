@@ -1,6 +1,7 @@
 import asyncio
 
-from liteagent import agent, chat
+from liteagent import agent, bus
+from liteagent.events import Event
 from liteagent.providers import openai
 from liteagent.tools import duckduckgo, vision
 
@@ -13,10 +14,14 @@ async def searcher() -> str: pass
 async def viewer() -> str: pass
 
 
-@chat.terminal(logo="Chatbot")
 @agent(provider=openai(model='gpt-4.1'), team=[searcher, viewer])
 async def chatbot() -> str: pass
 
 
+@bus.on(Event)
+async def listen(event: Event):
+    print(event)
+
+
 if __name__ == "__main__":
-    asyncio.run(chatbot())
+    asyncio.run(chatbot("search about trump"))

@@ -128,7 +128,7 @@ class Anthropic(Provider):
                     }]
                 }
 
-            case ToolMessage(id=id) as message:
+            case ToolMessage(tool_use_id=id) as message:
                 return {
                     "role": "user",
                     "content": [{
@@ -174,7 +174,7 @@ class Anthropic(Provider):
                             await message_stream.emit(AssistantMessage(
                                 content=ToolRequest(
                                     name=tool_block.name,
-                                    id=tool_block.id,
+                                    id=tool_block.tool_use_id,
                                     arguments=tool_block.input
                                 )
                             ))
@@ -184,7 +184,7 @@ class Anthropic(Provider):
                             await message_stream.emit(AssistantMessage(
                                 content=ToolRequest(
                                     name=event.tool_use.name,
-                                    id=event.tool_use.id,
+                                    id=event.tool_use.tool_use_id,
                                     arguments=event.tool_use.input
                                 )
                             ))

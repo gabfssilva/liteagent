@@ -1,101 +1,125 @@
 import asyncio
-import inspect
-import json
 import re
 import time
-from typing import AsyncIterable
 
-from pydantic import JsonValue
-from rich.errors import MarkupError
 from textual import on, events
 from textual.app import App, ComposeResult
-from textual.containers import VerticalScroll, Container, HorizontalScroll, Horizontal
+from textual.containers import VerticalScroll
 from textual.content import Content
+from textual.markup import MarkupError
 from textual.reactive import reactive, var
 from textual.widget import Widget
-from textual.widgets import Markdown, Input, Static, Pretty, TabbedContent, Label, Button, ListItem, ListView, Select, \
-    TextArea
+from textual.widgets import Markdown, Input, Static, TabbedContent
 
-from liteagent import AssistantMessage, UserMessage, ToolRequest, Agent, ToolMessage, Tool, AgentDispatcherTool
+from liteagent import AssistantMessage, Agent, ToolMessage, Tool
+from liteagent.bus.eventbus import bus
 from liteagent.chat.textual.table import plot_table
-from liteagent.internal.memoized import MemoizedAsyncIterable
-from liteagent.message import ExecutionError, Message, AgentLike
+from liteagent.codec import to_json_str
+from liteagent.events import (
+    AssistantMessagePartialEvent,
+    ToolRequestPartialEvent,
+    TeamDispatchPartialEvent,
+    TeamDispatchFinishedEvent,
+    ToolExecutionCompleteEvent, AssistantMessageCompleteEvent
+)
 from liteagent.chat.textual.plotext import plot_stacked_bar
 
 
-class AppendableMarkdown(Static):
+class ReactiveMarkdown(Static):
     def __init__(
         self,
-        content: str,
+        markdown: str = "",
         refresh_rate: float = 0.5,
         finished: bool = False,
+        follow: bool = False,
+        **kwargs
     ):
-        super().__init__(markup=False)
-        self._chunks = asyncio.Queue()
-        self._refresh_rate = refresh_rate
-        self._finished = finished
-        self._content = content
-
-    def content_as_str(self) -> str:
-        return self._content
+        super().__init__(**kwargs)
+        self.markdown = markdown
+        self.refresh_rate = refresh_rate
+        self.finished = finished
+        self.follow = follow
 
     def compose(self) -> ComposeResult:
-        yield Markdown(self._content)
+        yield Markdown(self.markdown)
 
     async def on_mount(self) -> None:
         self.run_worker(self._watch_content())
 
     async def _watch_content(self):
-        while not self._finished:
+        while not self.finished:
             try:
-                await self.query_one(Markdown).update(self._content)
-                chat_view = self.query_ancestor(ChatView)
-                if chat_view:
-                    chat_view.scroll_end()
-                await asyncio.sleep(self._refresh_rate)
+                await self.query_one(Markdown).update(self.markdown)
+
+                if self.follow:
+                    chat_view = self.query_ancestor(ChatView)
+                    if chat_view:
+                        chat_view.scroll_end()
+
+                await asyncio.sleep(self.refresh_rate)
             except MarkupError:
                 continue
 
-        await self.query_one(Markdown).update(self._content)
+        await self.query_one(Markdown).update(self.markdown)
 
-    async def append(self, message: str) -> None:
-        self._content += message
+    def update(self, markdown: str) -> None:
+        self.markdown = markdown
 
     def finish(self) -> None:
-        self._finished = True
+        self.finished = True
 
 
 class UserMessageWidget(Static):
     def __init__(self, content: str, classes: str = "user-message"):
         super().__init__(classes=classes)
-        self.markdown = AppendableMarkdown(content=f"{content}", finished=True)
+        self.markdown = ReactiveMarkdown(markdown=f"{content}", finished=True)
         self.border_title = "👤"
 
     def compose(self) -> ComposeResult:
         yield self.markdown
 
+
 class AssistantMessageWidget(Static):
+    assistant_content = reactive("")
+    finished = reactive(False)
+
     def __init__(
         self,
-        agent: AgentLike,
-        classes: str = "assistant-message",
+        id: str,
+        agent: Agent,
         refresh_rate: float = 0.5,
+        follow: bool = False,
+        classes: str = "assistant-message",
     ):
-        super().__init__(classes=classes)
-        self.markdown = AppendableMarkdown(content="", refresh_rate=refresh_rate)
+        super().__init__(classes=classes, id=id)
+
         self.border_title = "🤖"
-        self.border_subtitle = f"📋 {agent.name.replace('_', ' ').title()}"
-        self.tooltip = f"{agent.provider}"
+        self.border_subtitle = f"{agent.name.replace('_', ' ').title()}"
+        self.tooltip = f"{agent.provider.name}"
+        self.refresh_rate = refresh_rate
+        self.follow = follow
 
     def compose(self) -> ComposeResult:
-        yield self.markdown
+        yield ReactiveMarkdown(refresh_rate=self.refresh_rate, follow=self.follow)
+
+    def watch_assistant_content(self, assistant_content: str):
+        self.query_one(ReactiveMarkdown).update(assistant_content)
+
+    def watch_finished(self, finished: bool):
+        if finished:
+            self.query_one(ReactiveMarkdown).finish()
+
+    def finish(self):
+        self.finished = True
 
     async def on_mouse_down(self, event: events.MouseDown) -> None:
         if event.button == 3:  # Right click
-            self.app.copy_to_clipboard(self.markdown.content_as_str())
+            self.app.copy_to_clipboard(self.assistant_content)
             self.notify("Copied to clipboard! ✅", severity="information")
 
+
 class InternalChatView(Static):
+    prompt = reactive("")
     state = reactive("waiting")
     frame = reactive(0)
 
@@ -104,8 +128,9 @@ class InternalChatView(Static):
         *,
         id: str,
         name: str,
-        prompt: dict | list | str,
+        prompt: dict | list | str | None,
         agent: Agent,
+        loop_id: str | None = None,
         classes: str = "tool-message"
     ):
         super().__init__(
@@ -116,16 +141,29 @@ class InternalChatView(Static):
         self.agent_name = name
         self.pretty_name = name.replace("redirection", "").replace("_", " ").title()
 
-        if isinstance(prompt, dict) and len(prompt) == 1 and "prompt" in prompt:
+        if prompt and isinstance(prompt, dict) and len(prompt) == 1 and "prompt" in prompt:
             prompt = prompt["prompt"]
 
-        self.prompt = prompt
+        self._prompt = prompt or ""
         self.agent = agent
         self.border_title = f"🤖 {self.pretty_name} ⚪"
+        self.loop_id = loop_id
+
+    def compose(self) -> ComposeResult:
+        with TabbedContent("Prompt", "Result", classes="internal-chat-view"):
+            yield ReactiveMarkdown(self._prompt)
+            yield ChatView(
+                agent=self.agent,
+                parent_id=self.id,
+                refresh_rate=1 / 3,
+                follow=False,
+                loop_id=self.loop_id,
+            )
 
     def on_mount(self) -> None:
         self.state = "waiting"
         self._timer = self.set_interval(0.5, self._blink)
+        self._chat_view = None
 
     def _blink(self) -> None:
         if self.state == "waiting":
@@ -134,15 +172,8 @@ class InternalChatView(Static):
             else:
                 self.frame = 0
 
-    def compose(self) -> ComposeResult:
-        with TabbedContent("Prompt", "Result", classes="internal-chat-view"):
-            match self.prompt:
-                case dict() | list():
-                    yield Pretty(self.prompt)
-                case _:
-                    yield Markdown(str(self.prompt))
-
-            yield ChatView(self.agent)
+    def update_prompt(self, prompt):
+        self.query_one(ReactiveMarkdown).update(prompt)
 
     def watch_frame(self, frame):
         emoji = "⚪" if frame == 0 else "  "
@@ -156,29 +187,31 @@ class InternalChatView(Static):
             self._timer.stop()
             self.border_title = f"🤖 {self.pretty_name} 🔴"
 
-    async def process(self, messages) -> None:
-        async def do_process():
+    def complete(self, failed: bool) -> None:
+        self.state = "failed" if failed else "completed"
+
+        if not self._chat_view:
             try:
-                if isinstance(messages, ExecutionError):
-                    raise Exception(messages)
+                self._chat_view = self.query_one(ChatView)
+                if self._chat_view:
+                    self._chat_view.mark_completed()
+            except Exception:
+                pass
 
-                await self.query_one(ChatView).process(messages, True)
-                self.state = "completed"
-            except Exception as e:
-                self.state = "failed"
-                await self.query_one(ChatView).mount(Markdown(f"error: {e}"))
-
-        self.run_worker(do_process())
+    async def handle_error(self, error) -> None:
+        self.state = "failed"
+        error_message = f"error: {error}"
+        await self.query_one(ChatView).mount(ReactiveMarkdown(error_message))
 
 
 class WidgetRenderer(Widget):
     def __init__(self, message: AssistantMessage, *children: Widget):
-        super().__init__(*children, classes = "tool-message")
+        super().__init__(*children, classes="tool-message")
         self._message = message
-        self._tool_use: ToolRequest = self._message.content
+        self._tool_use: AssistantMessage.ToolUseChunk = self._message.content
         self.border_title = f"{self._tool_use.tool.emoji} {self._tool_use.name}"
         self.tooltip = Content.from_text(self._tool_use.tool.description, markup=False)
-        self.id = f"{self._tool_use.name}_{self._tool_use.id}"
+        self.id = f"{self._tool_use.name}_{self._tool_use.tool_use_id}"
         self.set_styles(border_title=self._tool_use.tool.emoji)
 
     async def do_render(self, message: ToolMessage) -> None:
@@ -188,7 +221,6 @@ class WidgetRenderer(Widget):
 class ToolUseWidget(Static):
     tool_name = var("")
     tool_emoji = var("")
-    tool_args = var({})
     state = reactive("waiting")
     frame = reactive(0)
     start = reactive(0)
@@ -197,40 +229,42 @@ class ToolUseWidget(Static):
     def __init__(
         self,
         id: str,
-        arguments: dict,
         tool: Tool,
+        initial_args: str | None,
+        refresh_rate: float = 1 / 3,
+        follow: bool = False,
         classes: str = "tool-message"
     ):
         super().__init__(id=id, classes=classes)
         self.tool_name = self._camel_to_words(tool.name.replace("__", ": ").replace("_", " ")).title()
         self.tool_emoji = tool.emoji
-        self.tool_args = arguments
         self.set_styles(border_title=tool.emoji)
         self.title_template = f"{self.tool_emoji} {self.tool_name}" + " {emoji}"
         self.border_title = self.title_template.format(emoji="⚪")
         self.tooltip = Content.from_text(tool.description, markup=False)
-        self.widget_response = issubclass(tool.response_type, Widget)
+        self.initial_args = initial_args
+        self.refresh_rate = refresh_rate
+        self.follow = follow
 
     @staticmethod
     def _camel_to_words(text: str) -> str:
         return re.sub(r'(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])', ' ', text)
 
     def compose(self) -> ComposeResult:
-        with TabbedContent("Arguments", "Result" if not self.widget_response else "Widget"):
-            if self.tool_args == '{}' or len(self.tool_args) == 0:
-                yield Markdown("👻")
-            else:
-                yield Pretty(self.tool_args)
-            if not self.widget_response:
-                yield AppendableMarkdown(content="", refresh_rate=1)
-            else:
-                yield HorizontalScroll(
-                    id="widget_response",
-                    disabled=True,
-                    can_focus=False,
-                    can_focus_children=False,
-                    can_maximize=False
-                )
+        with TabbedContent("Arguments", "Result"):
+            yield ReactiveMarkdown(
+                markdown=self.initial_args or "👻",
+                id=f"{self.id}_args",
+                refresh_rate=self.refresh_rate,
+                follow=self.follow,
+            )
+
+            yield ReactiveMarkdown(
+                markdown="",
+                id=f"{self.id}_result",
+                refresh_rate=self.refresh_rate,
+                follow=self.follow,
+            )
 
     def on_mount(self) -> None:
         self.state = "waiting"
@@ -259,121 +293,207 @@ class ToolUseWidget(Static):
         if state == "completed":
             self._blink_timer.stop()
             self._elapsed_timer.stop()
+            self.query_one(f"#{self.id}_result", ReactiveMarkdown).finish()
+            self.query_one(f"#{self.id}_args", ReactiveMarkdown).finish()
             self.border_title = self.title_template.format(emoji="🟢")
         elif state == "failed":
             self._blink_timer.stop()
             self._elapsed_timer.stop()
+            self.query_one(f"#{self.id}_result", ReactiveMarkdown).finish()
+            self.query_one(f"#{self.id}_args", ReactiveMarkdown).finish()
             self.border_title = self.title_template.format(emoji="🔴")
 
     def complete(self, failed: bool) -> None:
         self.state = "failed" if failed else "completed"
-        self.query_one(AppendableMarkdown).finish()
 
-    async def append_widget(self, widget: Widget) -> None:
-        scroll = self.query_one("#widget_response", HorizontalScroll)
-        await scroll.mount(widget)
-        self.state = "completed"
+    def append_args(self, accumulated: str) -> None:
+        try:
+            args = self.query_one(f"#{self.id}_args", ReactiveMarkdown)
+            args.update('```json\n' + accumulated + '\n```')
+        except Exception as e:
+            self.app.exit(message=str(e))
 
-    async def append_result(self, chunk: str) -> None:
-        if len(chunk) > 250:
-            chunk = chunk[:250] + "\n...[omitted]"
-
-        result = self.query_one(AppendableMarkdown)
-        await result.append(chunk)
-
-    async def append_json(self, chunk: JsonValue) -> None:
-        data = []
-
-        if inspect.isasyncgen(chunk):
-            async for item in chunk:
-                data.append(item)
-        else:
-            data = chunk
-
-        result = self.query_one(AppendableMarkdown)
-        json_string = json.dumps(data, indent=2)
-
-        if len(json_string) > 1000:
-            json_string = json_string[:1000] + "\n...[omitted]"
-
-        await result.append(f"""```json\n{json_string}\n```""")
+    def append_result(self, json_result: str) -> None:
+        try:
+            self.query_one(f"#{self.id}_result", ReactiveMarkdown).update('```json\n' + json_result + '\n```')
+        except Exception as e:
+            self.app.exit(message=str(e))
 
 
 class ChatView(VerticalScroll):
-    def __init__(self, agent: Agent, id: str = None):
+    def __init__(
+        self,
+        agent: Agent,
+        loop_id: str | None = None,
+        refresh_rate: float = 0.5,
+        follow: bool = False,
+        id: str = None,
+        parent_id: str = None,
+    ):
         super().__init__(id=id)
         agent.with_tool(plot_stacked_bar)
         agent.with_tool(plot_table)
         self._agent = agent
+        self._parent_id = parent_id
+        self._completed = False
+        self.refresh_rate = refresh_rate
+        self.follow = follow
+        self.loop_id = loop_id
 
-    async def process(self, messages: AsyncIterable[Message], inner: bool) -> None:
-        async for message in messages:
-            match message:
-                case UserMessage():
-                    pass
+    def on_mount(self) -> None:
+        @bus.on(AssistantMessagePartialEvent)
+        async def handle_assistant_message_partial(event: AssistantMessagePartialEvent):
+            if self._parent_id and self._completed:
+                return False
 
-                case AssistantMessage(content=MemoizedAsyncIterable() as stream):
-                    assistant_widget = AssistantMessageWidget(
-                        message.agent,
-                        "assistant-message" if not inner else "assistant-message-inner", 1 if inner else 1 / 30
+            if event.agent != self._agent:
+                return True
+
+            if self.loop_id and self.loop_id != event.loop_id:
+                return True
+
+            message: AssistantMessage = event.message
+            stream_id = message.content.stream_id
+
+            widget_id = f"assistant_{stream_id}"
+
+            try:
+                widget = self.query_one(f"#{widget_id}", AssistantMessageWidget)
+            except Exception:
+                widget = AssistantMessageWidget(
+                    id=widget_id,
+                    agent=event.agent,
+                    refresh_rate=self.refresh_rate,
+                    follow=self.follow,
+                    classes="assistant-message",
+                )
+
+                await self.mount(widget)
+
+            widget.assistant_content = message.content.accumulated
+
+        @bus.on(AssistantMessageCompleteEvent)
+        async def handle_assistant_message(event: AssistantMessageCompleteEvent):
+            if self._parent_id and self._completed:
+                return False
+
+            if event.agent != self._agent:
+                return True
+
+            if self.loop_id and self.loop_id != event.loop_id:
+                return True
+
+            message: AssistantMessage = event.message
+            stream_id = message.content.stream_id
+
+            widget = self.query_one(f"#assistant_{stream_id}", AssistantMessageWidget)
+            widget.finish()
+            return True
+
+        @bus.on(ToolRequestPartialEvent)
+        async def handle_tool_request_partial(event: ToolRequestPartialEvent):
+            if self._parent_id and self._completed:
+                return False
+
+            if event.agent != self._agent:
+                return True
+
+            if self.loop_id and self.loop_id != event.loop_id:
+                return True
+
+            chunk = event.chunk
+            tool = event.tool
+            tool_id = event.tool_id
+
+            tool_widget_id = f"{tool.name}_{tool_id}"
+            try:
+                widget = self.query_one(f"#{tool_widget_id}", ToolUseWidget)
+                widget.append_args(await to_json_str(chunk.accumulated_arguments, indent=2))
+            except Exception:
+                await self.mount(ToolUseWidget(
+                    tool_widget_id,
+                    tool,
+                    chunk.accumulated_arguments,
+                    classes="tool-message",
+                    refresh_rate=self.refresh_rate,
+                    follow=self.follow,
+                ))
+
+        @bus.on(TeamDispatchPartialEvent)
+        async def handle_team_dispatch_start(event: TeamDispatchPartialEvent):
+            if self._parent_id and self._completed:
+                return False
+
+            if event.agent != self._agent:
+                return True
+
+            if self.loop_id and self.loop_id != event.loop_id:
+                return True
+
+            widget_id = f"{event.target_agent.name}_{event.tool_id}"
+
+            try:
+                widget = self.query_one(f"#{widget_id}", InternalChatView)
+            except Exception:
+                name = event.tool.name
+                arguments = event.accumulated_arguments
+                agent = event.target_agent
+
+                try:
+                    widget = InternalChatView(
+                        id=widget_id,
+                        name=name,
+                        prompt=arguments,
+                        agent=agent,
+                        loop_id=event.loop_id,
+                        classes="tool-message"
                     )
 
-                    await self.mount(assistant_widget)
+                    await self.mount(widget)
+                except Exception as e:
+                    self.app.exit(message=str(e))
+                    return
 
-                    async def append_stream(s: MemoizedAsyncIterable):
-                        async for chunk in s:
-                            await assistant_widget.markdown.append(chunk)
+            widget.update_prompt(await to_json_str(event.accumulated_arguments, indent=2))
 
-                        assistant_widget.markdown.finish()
+        @bus.on(TeamDispatchFinishedEvent)
+        async def handle_team_dispatch_complete(event: TeamDispatchFinishedEvent):
+            if self._parent_id and self._completed:
+                return False
 
-                    self.run_worker(append_stream(stream))
+            if event.agent != self._agent:
+                return True
 
-                case AssistantMessage(
-                    content=ToolRequest(id=tool_id, arguments=arguments, tool=AgentDispatcherTool() as tool)):
-                    await self.mount(InternalChatView(
-                        id=f"{tool.name}_{tool_id}",
-                        name=tool.name,
-                        prompt=arguments,
-                        agent=self._agent,
-                        classes="tool-message-inner" if inner else "tool-message",
-                    ))
+            if self.loop_id and self.loop_id != event.loop_id:
+                return True
 
-                case AssistantMessage(content=ToolRequest(tool=tool)) as message if tool.response_type == Widget:
-                    await self.mount(WidgetRenderer(message))
+            widget_id = f"{event.target_agent.name}_{event.tool_id}"
+            widget = self.query_one(f"#{widget_id}", InternalChatView)
+            widget.complete(False)
 
-                case AssistantMessage(content=ToolRequest(id=tool_id, arguments=arguments, tool=tool)):
-                    await self.mount(ToolUseWidget(
-                        id=f"{tool.name}_{tool_id}",
-                        arguments=arguments,
-                        tool=tool,
-                        classes="tool-message" if not inner else "tool-message-inner"
-                    ))
+        @bus.on(ToolExecutionCompleteEvent)
+        async def handle_tool_exec_complete(event: ToolExecutionCompleteEvent):
+            if self._parent_id and self._completed:
+                return False
 
-                case ToolMessage() as tool_message if isinstance(tool_message.content, Widget):
-                    widget = self.query_one(f"#{tool_message.name}_{tool_message.id}", WidgetRenderer)
-                    await widget.do_render(tool_message)
+            if event.agent != self._agent:
+                return True
 
-                case ToolMessage(tool=AgentDispatcherTool()) as tool_message:
-                    widget = self.query_one(f"#{tool_message.name}_{tool_message.id}", InternalChatView)
-                    self.run_worker(widget.process(tool_message.content))
+            if self.loop_id and self.loop_id != event.loop_id:
+                return True
 
-                case ToolMessage() as message:
-                    async def process_result(m):
-                        tool_use_widget = self.query_one(f"#{m.name}_{m.id}", ToolUseWidget)
+            tool = event.tool
+            tool_id = event.tool_id
 
-                        result = await m.content_as_json()
-                        is_error = isinstance(m.content, ExecutionError)
+            tool_widget_id = f"{tool.name}_{tool_id}"
 
-                        if isinstance(result, str):
-                            await tool_use_widget.append_result(result)
-                        else:
-                            await tool_use_widget.append_json(result)
-
-                        tool_use_widget.complete(is_error)
-
-                    self.run_worker(process_result(message))
-
+            widget = self.query_one(f"#{tool_widget_id}", ToolUseWidget)
+            widget.append_result(await to_json_str(event.result, indent=2))
+            widget.complete(isinstance(event.result, ToolMessage.ExecutionError))
             self.scroll_end()
+
+    def mark_completed(self):
+        self._completed = True
 
 
 class ChatApp(App):
@@ -418,11 +538,11 @@ class ChatApp(App):
       margin: 0;
     }
     
-    UserMessageWidget > AppendableMarkdown > Markdown {
+    UserMessageWidget > Markdown {
         color: $foreground-darken-3;
     } 
     
-    AssistantMessageWidget > AppendableMarkdown > Markdown {
+    AssistantMessageWidget > Markdown {
         color: $foreground-lighten-3;
     } 
     
@@ -520,7 +640,7 @@ class ChatApp(App):
         self._theme = theme
 
     def compose(self) -> ComposeResult:
-        with ChatView(self._agent):
+        with ChatView(agent=self._agent, refresh_rate=1 / 30, follow=True):
             from art import text2art
             yield Static(text2art(self._logo, font='tarty2'), id="chat-art")
         yield Input(placeholder="How can I help you?")
@@ -532,21 +652,17 @@ class ChatApp(App):
 
     @on(Input.Submitted)
     def on_input(self, event: Input.Submitted) -> None:
-        chat_view = self.query_one(ChatView)
-        event.input.clear()
         prompt = event.value
+        chat_view = self.query_one(ChatView)
         chat_view.mount(UserMessageWidget(prompt))
         chat_view.scroll_end()
-        self.run_worker(self.inference(prompt))
+        event.input.clear()
+        self.run_worker(self._process_input(prompt))
         self.query_one(Input).focus()
 
-    async def inference(self, prompt: str):
-        chat_view = self.query_one(ChatView)
-        await chat_view.process(self.send(prompt), False)
-
-    async def send(self, prompt: str) -> AsyncIterable[Message]:
-        async for message in self._session(prompt):
-            yield message
+    async def _process_input(self, prompt: str):
+        async for _ in self._session(prompt):
+            pass
 
     async def monitor_blocking(self, threshold=0.1):
         import asyncio

@@ -221,7 +221,7 @@ class Ollama(Provider, ABC):
                     "content": await message.content_as_string(),
                 }
 
-            case ToolMessage(id=id, content=content) as message:
+            case ToolMessage(tool_use_id=id, content=content) as message:
                 return {
                     "tool_call_id": id,
                     "role": "tool",

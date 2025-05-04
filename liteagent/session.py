@@ -1,8 +1,8 @@
 from typing import AsyncIterable, List
 
+from . import Image
 from .agent import Agent
-from .logger import log
-from .message import Message, UserMessage, MessageContent, AssistantMessage, ToolMessage, ToolRequest
+from .message import Message, UserMessage
 
 
 class Session:
@@ -12,11 +12,10 @@ class Session:
     def __init__(self, agent: Agent):
         self.agent = agent
         self.conversation = []
-        log.info("session_created", agent=agent.name)
 
     def _wrap_user_input(
         self,
-        *content: MessageContent | Message,
+        *content: str | Image | Message,
         **kwargs,
     ) -> List[Message]:
         if kwargs and self.agent.user_prompt_template:
@@ -33,37 +32,15 @@ class Session:
         if not content:
             raise ValueError("No content provided.")
 
-        def to_message(c: MessageContent | Message) -> Message:
+        def to_message(c: str | Image | Message) -> Message:
             return c if isinstance(c, Message) else UserMessage(content=c)
 
         return [to_message(c) for c in content]
 
-    def ordered_conversation(self) -> List[Message]:
-        reordered: List[Message] = []
-        tool_response_map = {}
-
-        for msg in self.conversation:
-            if isinstance(msg, ToolMessage):
-                tool_response_map[msg.id] = msg
-
-        skip_ids = set()
-
-        for msg in self.conversation:
-            if isinstance(msg, AssistantMessage) and isinstance(msg.content, ToolRequest):
-                reordered.append(msg)
-                tool_msg = tool_response_map.get(msg.content.id)
-                if tool_msg:
-                    reordered.append(tool_msg)
-                    skip_ids.add(tool_msg.id)
-            elif isinstance(msg, ToolMessage) and msg.id in skip_ids:
-                continue
-            else:
-                reordered.append(msg)
-
-        return reordered
-
     async def summarize(self, prompt: str = "Summarize in detail all the conversation so far."):
-        async for message in self(UserMessage(content=prompt)):
+        user_message = UserMessage(content=prompt)
+
+        async for message in self(user_message):
             yield message
 
         summarization = list(filter(lambda m: m.role == 'assistant', self.conversation))[-1]
@@ -72,56 +49,30 @@ class Session:
 
     def __call__(
         self,
-        *content: MessageContent | Message,
+        *content: str | Image | Message,
+        loop_id: str = None,
         **kwargs,
     ) -> AsyncIterable[Message]:
-        session_logger = log.bind(agent=self.agent.name, session_id=id(self))
-        session_logger.info("session_called")
-
         async def stream_and_track():
-            session_logger.debug("wrapping_user_input")
             user_input = self._wrap_user_input(*content, **kwargs)
-            session_logger.debug("user_input_wrapped", message_count=len(user_input))
 
-            ordered_conv = self.ordered_conversation()
-            session_logger.debug("conversation_ordered", message_count=len(ordered_conv))
+            full_conversation = self.conversation + user_input
 
-            full_conversation = ordered_conv + user_input
-            session_logger.debug("full_conversation_prepared", message_count=len(full_conversation))
-
-            # Replace the print with structured logging
-            session_logger.debug("sending_to_agent",
-                                 conversation_size=len(full_conversation),
-                                 user_messages=len([m for m in full_conversation if m.role == "user"]),
-                                 assistant_messages=len([m for m in full_conversation if m.role == "assistant"]),
-                                 tool_messages=len([m for m in full_conversation if m.role == "tool"]))
-
-            session_logger.debug("streaming_from_agent_started")
-            async for message in await self.agent(*full_conversation, stream=True):
-                if message in self.conversation:
-                    session_logger.debug("skipping_duplicate_message", role=message.role)
-                    continue
-
+            async for message in await self.agent(*full_conversation, loop_id=loop_id, stream=True):
                 if message.role == "system":
-                    session_logger.debug("skipping_system_message")
                     continue
 
-                session_logger.debug("message_received",
-                                     role=message.role,
-                                     content_type=type(message.content).__name__)
+                if message in self.conversation:
+                    continue
 
                 yield message
-                self.conversation.append(message)
-                session_logger.debug("message_added_to_conversation",
-                                     conversation_size=len(self.conversation))
 
-            session_logger.debug("streaming_from_agent_completed")
+                if message.complete():
+                    self.conversation.append(message)
 
         return stream_and_track()
 
     def reset(self):
-        session_logger = log.bind(agent=self.agent.name, session_id=id(self))
-        session_logger.info("session_reset", previous_conversation_size=len(self.conversation))
         self.conversation = []
 
 

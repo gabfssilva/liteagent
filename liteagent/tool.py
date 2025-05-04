@@ -4,13 +4,18 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import partial
-from typing import List, AsyncIterable, Any, Coroutine, overload
-from typing import Type, Callable, Awaitable, Protocol, runtime_checkable
+from typing import List, AsyncIterable, Any, Coroutine, Literal, override
+from typing import Type, Callable, Awaitable
+from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, JsonValue, create_model
+from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo, Field
 
-from liteagent.logger import log
+from .codec import JsonLike
+
+if TYPE_CHECKING:
+    from .agent import Agent
+    from . import ToolMessage
 
 Out = str | dict | BaseModel | Coroutine[Any, Any, 'Out']
 
@@ -116,14 +121,9 @@ class Tool(ToolDef):
                 self._remove_defaults(def_schema)
 
     async def _unsafe_call(self, **kwargs):
-        tool_logger = log.bind(tool=self.name)
-        tool_logger.debug("validating_input")
-
         try:
             input_data = self.input(**kwargs)
-            tool_logger.debug("input_validation_successful")
         except Exception as e:
-            tool_logger.error("input_validation_failed", error=str(e))
             raise
 
         def shallow_dump(self) -> dict:
@@ -132,29 +132,16 @@ class Tool(ToolDef):
             return {key: get_attr(key) for key in keys}
 
         dump = shallow_dump(input_data)
-        tool_logger.debug("input_processed", fields=list(dump.keys()))
 
-        is_coroutine = inspect.iscoroutinefunction(self.handler)
-        is_method = inspect.ismethod(self.handler)
-        tool_logger.debug("handler_analysis", is_coroutine=is_coroutine, is_method=is_method)
+        self.is_coroutine = inspect.iscoroutinefunction(self.handler)
+
+        if isinstance(self, AgentDispatcherTool):
+            dump['loop_id'] = kwargs.pop("loop_id", None)
 
         try:
-            if is_coroutine and is_method:
-                tool_logger.debug("executing_async_method")
-                return await self.handler(self, **dump)
-            elif is_coroutine:
-                tool_logger.debug("executing_async_function")
+            if self.is_coroutine:
                 return await self.handler(**dump)
-            elif is_method:
-                tool_logger.debug("executing_sync_method_in_thread")
-                result = await asyncio.to_thread(self.handler, self, **dump)
-
-                if inspect.isgenerator(result):
-                    return self._gen_to_async(result)
-
-                return result
             else:
-                tool_logger.debug("executing_sync_function_in_thread")
                 result = await asyncio.to_thread(self.handler, **dump)
 
                 if inspect.isgenerator(result):
@@ -162,44 +149,36 @@ class Tool(ToolDef):
 
                 return result
         except Exception as e:
-            tool_logger.error("handler_execution_failed", error=str(e))
             raise
 
-    async def __call__(self, **kwargs):
-        from liteagent.message import ExecutionError
+    @property
+    def type(self) -> Literal['agent', 'tool']:
+        return 'tool'
 
-        tool_logger = log.bind(tool=self.name)
-        tool_logger.info("tool_called", args=str(kwargs))
-
+    async def __call__(self, **kwargs) -> JsonLike:
         try:
-            tool_logger.debug("executing_tool")
             result = await self._unsafe_call(**kwargs)
 
             match result:
                 case BaseModel():
-                    tool_logger.debug("converting_basemodel_to_dict")
                     result = result.model_dump()
 
-            tool_logger.info("tool_execution_successful", result_type=type(result).__name__)
             return result or "function finished successfully"
         except ImportError as e:
-            tool_logger.error("import_error", module=e.name, msg=e.msg)
-            return ExecutionError(
+            from . import ToolMessage
+
+            return ToolMessage.ExecutionError(
                 exception='ImportError',
-                error=e.msg,
+                message=e.msg,
                 should_retry='no',
-                should_tell_user=True
             )
         except Exception as e:
-            tool_logger.error("tool_execution_error",
-                              error_type=type(e).__name__,
-                              error=str(e),
-                              traceback=True)
-            return ExecutionError(
+            from . import ToolMessage
+
+            return ToolMessage.ExecutionError(
                 exception=e.__class__.__name__,
-                error=f"The function called returned an error. Evaluate if you need to retry: {e}",
+                message=f"The function called returned an error. Evaluate if you need to retry: {e}",
                 should_retry='maybe',
-                should_tell_user=True
             )
 
     @staticmethod
@@ -211,15 +190,24 @@ class Tool(ToolDef):
             except StopIteration:
                 break
 
+    def __repr__(self):
+        return f"{self.emoji} {self.name}"
+
+
 class Tools(ToolDef, ABC):
     def tools(self) -> List[Tool]:
         tools = []
 
         for _, tool_def in inspect.getmembers(self.__class__, predicate=lambda m: self.predicate(m)):
             for tool in tool_def.tools():
-                tool.handler = partial(tool.handler, self)
-                tool.name = f"{self.base_name()}__{tool.name}"
-                tools.append(tool)
+                tools.append(Tool(
+                    name=f"{self.base_name()}__{tool.name}",
+                    description=tool.description,
+                    input=tool.input,
+                    handler=partial(tool.handler, self),
+                    eager=tool.eager,
+                    emoji=tool.emoji,
+                ))
 
         return tools
 
@@ -229,12 +217,6 @@ class Tools(ToolDef, ABC):
 
     def base_name(self) -> str:
         return re.sub(r'(?<!^)(?=[A-Z])', '_', self.__class__.__name__).lower()
-
-
-@runtime_checkable
-class ToolResponse(Protocol):
-    def __tool_response__(self) -> JsonValue:
-        pass
 
 
 class FunctionToolDef(ToolDef):
@@ -273,14 +255,10 @@ class FunctionToolDef(ToolDef):
             eager=self.eager
         )
 
-    def tools(self) -> List[Tool]:  return [self.tool]
-
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .agent import Agent
-    from . import Message
+    def tools(self) -> List[Tool]:
+        return [
+            self.tool
+        ]
 
 
 @dataclass(kw_only=True)
@@ -300,9 +278,22 @@ class AgentDispatcherTool(Tool):
         self.input = self._create_input_model()
         self.handler = self._dispatch
 
-    async def _dispatch(self, *args, **kwargs) -> AsyncIterable['Message']:
+    @override
+    def type(self) -> Literal['agent', 'tool']:
+        return 'agent'
+
+    async def _dispatch(self, *args, **kwargs):
         args = filter(lambda arg: arg is not self, args)
-        return await self.agent(*list(args), stream=True, **kwargs)
+
+        last_assistant_message = None
+
+        loop_id = kwargs.pop('loop_id', None)
+
+        async for message in await self.agent(*list(args), stream=True, loop_id=loop_id, **kwargs):
+            if message.complete() and message.role == 'assistant':
+                last_assistant_message = message
+
+        return last_assistant_message
 
     def _create_input_model(self):
         if not self.agent.signature:
@@ -321,57 +312,3 @@ class AgentDispatcherTool(Tool):
             f"{self.agent.name.capitalize()}Input",
             **parameters
         )
-
-
-class ToolOut(Protocol):
-    async def __json__(self) -> JsonValue: pass
-
-
-@overload
-async def to_json(value: ToolOut) -> JsonValue:
-    return await value.__json__()
-
-
-@overload
-async def to_json[T: str | int | float | bool | None](value: T) -> JsonValue:
-    return value
-
-
-@overload
-async def to_json(value: list) -> JsonValue:
-    return [await to_json(value) for value in value]
-
-
-class JsonConverter[I]:
-    def __init__(self, value: I, converter: Callable[[I], Awaitable[JsonValue]]):
-        self.value = value
-        self.converter = converter
-
-    async def __json__(self) -> JsonValue:
-        return await self.converter(self.value)
-
-
-class TypeConverter[I, O](ABC):
-    @abstractmethod
-    async def convert(self, value: I) -> O:
-        pass
-
-
-class BaseModelToJson(TypeConverter[BaseModel, JsonValue]):
-    async def convert(self, value: BaseModel) -> JsonValue:
-        return value.model_dump()
-
-
-class SimpleValueToJson(TypeConverter[str | int | float | bool, JsonValue]):
-    async def convert(self, value: str | int | float | bool) -> JsonValue:
-        return value
-
-
-class ListToJson(TypeConverter[list, JsonValue]):
-    async def convert(self, value: list) -> JsonValue:
-        return value
-
-
-class DictToJson(TypeConverter[dict, JsonValue]):
-    async def convert(self, value: dict) -> JsonValue:
-        pass

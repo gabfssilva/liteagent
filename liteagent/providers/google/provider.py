@@ -69,7 +69,7 @@ class Google(Provider):
                         for call in chunk.function_calls:
                             await message_stream.emit(AssistantMessage(
                                 content=ToolRequest(
-                                    id=str(call.id or uuid.uuid4()),
+                                    id=str(call.tool_use_id or uuid.uuid4()),
                                     name=call.name,
                                     arguments=call.args,
                                 )

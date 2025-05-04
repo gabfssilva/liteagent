@@ -1,6 +1,7 @@
 import asyncio
 
-from liteagent import agent
+from liteagent import agent, bus
+from liteagent.events import ToolExecutionCompleteEvent
 from liteagent.providers import openai
 from liteagent.tools import wikipedia, python_runner
 
@@ -28,9 +29,7 @@ def code_runner(query: str) -> str:
 
 @agent(
     team=[wikipedia_agent, code_runner],
-    provider=openai(model='gpt-4.1'),
-    description="An agent specialized in searching the web"
-)
+    provider=openai(model='gpt-4o'))
 def searcher() -> str:
     """
     Generate a table showing how long the **five fastest animals in the world** would take to cross the **five longest bridges in the world**.
@@ -38,11 +37,19 @@ def searcher() -> str:
     **Requirements:**
     - Use **meters (m) for distance** and **minutes (min) for time**.
     - When extracting values, **identify and convert all units correctly** to prevent errors.
-      - **Units hierarchy for reference:**
-        - **Meters (m) < Feet (ft) < Kilometers (km) < Miles (mi)**
-      - Ensure all extracted values are in **consistent units** before calculations.
-    - Use the `code_runner` tool for any necessary calculations.
+    - **Units hierarchy for reference:**
+    - **Meters (m) < Feet (ft) < Kilometers (km) < Miles (mi)**
+    - Ensure all extracted values are in **consistent units** before calculations.
+
+
+    **DO NOT FORGET:** At the end, redirect to `code_runner` to make your calculations as precise as possible.
+    USE CODE RUNNER!!!!!!!!
     """
+
+
+@bus.on(ToolExecutionCompleteEvent)
+async def on_message(msg: ToolExecutionCompleteEvent):
+    print(msg)
 
 
 if __name__ == '__main__':

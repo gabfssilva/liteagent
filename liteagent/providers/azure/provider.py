@@ -113,16 +113,16 @@ class AzureAI(Provider):
                                     "arguments": ""
                                 }
 
-                            if tool_call.function.arguments:
+                            if tool_call.function.accumulated_arguments:
                                 on_going_function['arguments'] = on_going_function[
-                                                                     'arguments'] + tool_call.function.arguments
+                                                                     'arguments'] + tool_call.function.accumulated_arguments
 
                                 try:
                                     args = json.loads(on_going_function['arguments'])
                                     await message_stream.emit(AssistantMessage(
                                         content=ToolRequest(
                                             name=on_going_function['name'],
-                                            id=tool_call.id or f'{uuid.uuid4()}',
+                                            id=tool_call.tool_use_id or f'{uuid.uuid4()}',
                                             arguments=args
                                         )
                                     ))
@@ -172,7 +172,7 @@ class AzureAI(Provider):
                     content=await message.content_as_string()
                 )
 
-            case ToolMessage(id=id) as message:
+            case ToolMessage(tool_use_id=id) as message:
                 return azure.ToolMessage(
                     tool_call_id=id,
                     content=await message.content_as_string()

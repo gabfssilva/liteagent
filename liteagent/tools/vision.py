@@ -1,7 +1,6 @@
 from pydantic import Field
 
-from liteagent import agent, tool, ToolDef, ImageBase64, ImageURL
-from liteagent.message import ImagePath
+from liteagent import agent, tool, ToolDef, ImageURL, ImagePath
 from liteagent.provider import Provider
 
 
@@ -28,7 +27,7 @@ def vision(
     async def vision_agent(
         instructions: str = Field(...,
                                   description='A comprehensive instruction of what you need to know about the picture. Do not spare words.'),
-        image: ImageBase64 | ImageURL | ImagePath = Field(..., description='The image content.')
+        image: ImageURL | ImagePath = Field(..., description='The image content.')
     ) -> str: pass
 
     return vision_agent

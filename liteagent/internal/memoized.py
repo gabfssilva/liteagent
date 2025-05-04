@@ -108,17 +108,3 @@ class MemoizedAsyncIterable[T](AsyncIterable[T]):
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.close(reason=exc)
-
-
-async def main():
-    async with MemoizedAsyncIterable() as stream:
-        await stream.emit(1)
-        await stream.emit(2)
-        await stream.emit(3)
-
-    async for element in stream:
-        print(element)
-
-
-if __name__ == '__main__':
-    asyncio.run(main())

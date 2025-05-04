@@ -186,7 +186,7 @@ class Reddit(Tools):
                     "score": comment.score,
                     "created_utc": comment.created_utc,
                     "permalink": f"https://reddit.com{comment.permalink}",
-                    "id": comment.id
+                    "id": comment.tool_use_id
                 })
 
             return comments

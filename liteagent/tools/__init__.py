@@ -36,7 +36,6 @@ __all__ = [
     'websearch',
     'wikipedia',
     "duckduckgo",
-    "crawl4ai",
     'py',
     'memoria',
     'ipify',

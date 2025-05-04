@@ -2,13 +2,14 @@
 from typing import Optional, AsyncIterable
 
 from ..agent import Agent
+from ..bus.eventbus import bus
 from ..message import Message
 
 
 def terminal(
     agent_f: Optional[Agent[AsyncIterable[Message]]] = None,
     *,
-    theme: str = "gruvbox",
+    theme: str = "textual-dark",
     logo: str = None,
 ):
     """
@@ -16,7 +17,6 @@ def terminal(
     
     Args:
         agent_f: The agent to chat with
-        exit_command: The command to exit the chat
         theme: The theme to use for syntax highlighting
         logo: The initial message to display
     
@@ -34,10 +34,14 @@ def terminal(
                 logo=logo,
             )
 
-            await app.run_async()
+            try:
+                await app.run_async()
+            finally:
+                await bus.stop()
 
         return chat_loop
 
     if agent_f is None:
         return decorator
+
     return decorator(agent_f)

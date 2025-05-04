@@ -1,57 +1,38 @@
+from __future__ import annotations
+
 import base64
-import json
-from collections.abc import AsyncIterable
+import uuid
 from dataclasses import dataclass, field
-from typing import Literal, Iterator, Protocol
+from typing import Literal
 
 import aiofiles
-from pydantic import BaseModel, JsonValue
 
-from liteagent import Tool
-from liteagent.codec import to_json
-from liteagent.internal.memoized import MemoizedAsyncIterable
+from liteagent.codec import JsonValue, to_json, JsonLike, JsonObject, JsonNull
 
 
 @dataclass
-class ExecutionError:
-    exception: str
-    error: str
-    should_tell_user: bool
-    should_retry: Literal["yes", "no", "maybe"]
+class Image:
+    type: Literal["url", 'path']
+
+    async def __json__(self) -> JsonValue: pass
 
 
 @dataclass
-class ToolRequest:
-    id: str
-    name: str
-    arguments: dict | list | str
-    origin: Literal["local", "model"] = "model"
-    tool: Tool | None = field(default=None)
-
-    async def __json__(self) -> JsonValue:
-        return {
-            "id": self.id,
-            "name": self.name,
-            "arguments": self.arguments,
-        }
-
-
-@dataclass
-class ImageURL:
+class ImageURL(Image):
     type: Literal["url"] = field(init=False, default="url")
     url: str
 
-
-@dataclass
-class ImageBase64:
-    type: Literal["base64"] = field(init=False, default="base64")
-    base64: str
+    async def __json__(self) -> JsonValue:
+        return {"type": self.type, "url": self.url}
 
 
 @dataclass
-class ImagePath:
+class ImagePath(Image):
     type: Literal["path"] = field(init=False, default="path")
     path: str
+
+    async def __json__(self) -> JsonValue:
+        return {"type": self.type, "path": self.path}
 
     def image_type(self) -> str:
         return self.path.split('.')[-1]
@@ -62,101 +43,104 @@ class ImagePath:
             return base64.b64encode(content).decode("utf-8")
 
 
-@dataclass
-class ImageBytes:
-    type: Literal["bytes"] = field(init=False, default="bytes")
-    bytes: bytes
-
-    def __json__(self) -> JsonValue:
-        return {
-            "base64": self.bytes.decode('utf-8')
-        }
-
-
-Image = ImageURL | ImageBase64 | ImageBytes | ImagePath
-Text = str
-
-Content = Text | Image | dict | JsonValue | ToolRequest | BaseModel
-
-PartialContent = MemoizedAsyncIterable[Content] | AsyncIterable[Content] | Iterator[Content]
-CompleteContent = Content | list[Content]
-MessageContent = CompleteContent | PartialContent
-
-Role = Literal["user", "assistant", "system", "tool"]
-
-
-class AgentLike(Protocol):
-    name: str
-    provider: object
-
-
-@dataclass
+@dataclass(kw_only=True, eq=True, frozen=True)
 class Message:
-    role: Role
-    content: MessageContent
-    agent: AgentLike | None = field(init=False, default=None)
+    id: str = field(init=False, default_factory=lambda: str(uuid.uuid4()))
+    role: Literal['system', 'assistant', 'user', 'tool']
+    content: JsonLike
+    loop_id: str | None = None
 
-    def __post_init__(self):
-        if isinstance(self.content, MemoizedAsyncIterable):
-            return
+    def __hash__(self) -> int:
+        return hash(self.id)
 
-        if isinstance(self.content, AsyncIterable):
-            self.content = MemoizedAsyncIterable.from_async_iterable(self.content)
-
-    async def acontent(self) -> MessageContent:
-        if isinstance(self.content, MemoizedAsyncIterable):
-            return await self.content.collect()
-
-        return self.content
+    async def content_json(self) -> JsonValue:
+        return await to_json(self.content)
 
     async def __json__(self) -> JsonValue:
         return {
-            "role": self.role,
-            "content": await self.content_as_string(),
+            'role': self.role,
+            'content': self.content,
+            'loop_id': self.loop_id,
         }
 
-    async def content_as_json(self) -> JsonValue:
-        return await to_json(await self.acontent())
-
-    async def content_as_string(self) -> str:
-        return json.dumps(await self.content_as_json())
+    def complete(self) -> bool: return True
 
 
-@dataclass
-class UserMessage(Message):
-    role: Literal['user'] = field(init=False, default="user")
-
-
-@dataclass
-class AssistantMessage(Message):
-    role: Literal['assistant'] = field(init=False, default="assistant")
-    content: MemoizedAsyncIterable[str] | ToolRequest | BaseModel
-
-    async def acontent(self) -> MessageContent:
-        if isinstance(self.content, MemoizedAsyncIterable):
-            return ''.join(await self.content.collect())
-
-        return self.content
-
-
-@dataclass
+@dataclass(kw_only=True, eq=True, frozen=True)
 class SystemMessage(Message):
     role: Literal['system'] = field(init=False, default="system")
     content: str
 
 
-@dataclass
-class ToolMessage(Message):
-    id: str
-    name: str
-    content: MessageContent | ExecutionError
-    role: Literal['tool'] = field(init=False, default="tool")
-    tool: Tool
-    elapsed_time: float
+@dataclass(kw_only=True, eq=True, frozen=True)
+class UserMessage(Message):
+    role: Literal['user'] = field(init=False, default="user")
+    content: str | Image
 
-    async def acontent(self) -> MessageContent:
-        match await super().acontent():
-            case list() as items if any(filter(lambda item: isinstance(item, Message), items)):
-                return items[-1]
-            case content:
-                return content
+
+@dataclass(kw_only=True, eq=True, frozen=True)
+class ToolMessage(Message):
+    role: Literal['tool'] = field(init=False, default="tool")
+    tool_use_id: str
+    tool_name: str
+    arguments: JsonObject | JsonNull
+    content: JsonLike | ExecutionError
+
+    @dataclass(kw_only=True)
+    class ExecutionError:
+        exception: str
+        message: str
+        should_retry: Literal['yes', 'no', 'maybe']
+
+        async def __json__(self) -> JsonValue:
+            return {
+                'exception': self.exception,
+                'message': self.message,
+                'should_retry': self.should_retry,
+            }
+
+
+@dataclass(kw_only=True, eq=True, frozen=True)
+class AssistantMessage(Message):
+    role: Literal['assistant'] = field(init=False, default="assistant")
+    content: TextComplete | JsonLike | ToolUse | TextChunk | ToolUseChunk
+
+    @dataclass(kw_only=True, eq=True, frozen=True)
+    class TextComplete:
+        stream_id: str
+        accumulated: str
+
+        async def __json__(self) -> JsonValue:
+            return self.accumulated
+
+    @dataclass(kw_only=True, eq=True, frozen=True)
+    class TextChunk:
+        stream_id: str
+        value: str
+        accumulated: str = field(default="")
+
+    @dataclass(kw_only=True, eq=True, frozen=True)
+    class ToolUseChunk:
+        tool_use_id: str
+        name: str
+        accumulated_arguments: JsonObject | str | JsonNull
+
+    @dataclass(kw_only=True, eq=True, frozen=True)
+    class ToolUse:
+        tool_use_id: str
+        name: str
+        arguments: JsonObject | JsonNull
+
+        async def __json__(self) -> JsonValue:
+            return {
+                "tool_use_id": self.tool_use_id,
+                "name": self.name,
+                "arguments": self.arguments
+            }
+
+    def complete(self) -> bool:
+        match self.content:
+            case AssistantMessage.TextChunk() | AssistantMessage.ToolUseChunk():
+                return False
+            case _:
+                return True
