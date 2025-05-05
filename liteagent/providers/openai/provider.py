@@ -94,11 +94,12 @@ class OpenAICompatible(Provider):
                 ))
 
             case ContentDoneEvent(content=content, parsed=parsed):
-                acc = cache.pop("last_assistant_message")
+                acc = cache.pop("last_assistant_message", None)
+                stream_id = acc['stream_id'] if acc else f'{uuid.uuid4()}'
 
                 return AssistantMessage(content=parsed if parsed is not None else AssistantMessage.TextComplete(
                     accumulated=content,
-                    stream_id=acc['stream_id']
+                    stream_id=stream_id
                 ))
 
             case FunctionToolCallArgumentsDeltaEvent(
@@ -213,3 +214,6 @@ class OpenAICompatible(Provider):
 
             case _:
                 raise Exception(f"Unknown message: {message}")
+
+    def __repr__(self):
+        return f"OpenAICompatible({self.model})"

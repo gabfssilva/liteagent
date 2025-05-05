@@ -1,16 +1,15 @@
-import asyncio
 import json
+import uuid
 from typing import AsyncIterable, Type
 
 from anthropic import AsyncAnthropic
 from anthropic._types import NOT_GIVEN
 from pydantic import BaseModel
 
-from liteagent import Tool
+from liteagent import Tool, ImagePath
+from liteagent.codec import to_json_str
 from liteagent.internal import register_provider
-from liteagent.internal.memoized import MemoizedAsyncIterable
-from liteagent.message import ToolMessage, ToolRequest, Message, UserMessage, AssistantMessage, SystemMessage, ImageURL, \
-    ImageBase64, MessageContent
+from liteagent.message import ToolMessage, Message, UserMessage, AssistantMessage, SystemMessage, ImageURL
 from liteagent.provider import Provider
 
 
@@ -28,24 +27,70 @@ class Anthropic(Provider):
         self.model = model
         self.args = kwargs
 
-    async def completion(
-        self,
-        messages: list[Message],
-        tools: list[Tool],
-        respond_as: Type,
-    ) -> AsyncIterable[Message]:
-        tool_definitions = list(map(lambda tool: {
-            "name": tool["function"]["name"],
-            "description": tool["function"]["description"],
-            "input_schema": tool["function"]["parameters"]
-        }, map(lambda tool: tool.definition, tools))) if len(tools) > 0 else NOT_GIVEN
+    async def _map_content(self, content):
+        if isinstance(content, str):
+            return [{"type": "text", "text": content}]
+        if isinstance(content, ImageURL):
+            return [{"type": "image", "source": {"type": "url", "url": content.url}}]
+        if isinstance(content, ImagePath):
+            return [{"type": "image", "source": {
+                "type": "base64",
+                "media_type": f"image/{content.image_type()}",
+                "data": await content.as_base64()
+            }}]
+        if isinstance(content, list):
+            out = []
+            for item in content:
+                out.extend(await self._map_content(item))
+            return out
+        raise ValueError(f"Invalid content type: {type(content)}")
 
-        parsed_messages = [await self.map_message(message) for message in messages]
+    async def _to_anthropic(self, message: Message) -> dict:
+        match message:
+            case UserMessage(content=content):
+                return {
+                    "role": "user",
+                    "content": await self._map_content(content)
+                }
+            case AssistantMessage(
+                content=AssistantMessage.ToolUse(tool_use_id=id, name=name, arguments=BaseModel() as args)):
+                return {"role": "assistant",
+                        "content": [{"type": "tool_use", "id": id, "name": name, "input": args.model_dump()}]}
+            case AssistantMessage(
+                content=AssistantMessage.ToolUse(tool_use_id=id, name=name, arguments=dict() as args)):
+                return {"role": "assistant", "content": [{"type": "tool_use", "id": id, "name": name, "input": args}]}
+            case AssistantMessage(content=AssistantMessage.ToolUse(tool_use_id=id, name=name, arguments=str(args))):
+                try:
+                    parsed = json.loads(args)
+                except:
+                    parsed = args
+                return {"role": "assistant", "content": [{"type": "tool_use", "id": id, "name": name, "input": parsed}]}
+            case AssistantMessage() as message if message.complete():
+                return {"role": "assistant", "content": [{"type": "text", "text": await to_json_str(message.content)}]}
+            case ToolMessage(tool_use_id=id) as message:
+                content = await to_json_str(message.content) if not isinstance(message.content,
+                                                                               str) else message.content
+                return {"role": "user", "content": [{"type": "tool_result", "tool_use_id": id, "content": content}]}
+            case SystemMessage(content=content):
+                return {"role": "system", "content": str(content)}
+            case Message(role=role, content=content):
+                return {"role": role, "content": [{"type": "text", "text": str(content)}]}
+            case _:
+                raise ValueError(f"Unknown message type: {message}")
 
-        system = next((msg for msg in messages if isinstance(msg, SystemMessage)), None)
-        system_content = system.content if system else NOT_GIVEN
+    async def completion(self, messages: list[Message], tools: list[Tool], respond_as: Type) -> AsyncIterable[Message]:
+        tool_definitions = [
+            {"name": t["function"]["name"], "description": t["function"]["description"],
+             "input_schema": t["function"]["parameters"]}
+            for t in map(lambda tool: tool.definition, tools)
+        ] if tools else NOT_GIVEN
 
-        parsed_messages = [msg for msg in parsed_messages if msg.get("role") != "system"]
+        parsed_messages = [await self._to_anthropic(m) for m in messages]
+        system_msg = next((m for m in messages if isinstance(m, SystemMessage)), None)
+        system_content = system_msg.content if system_msg else NOT_GIVEN
+
+        parsed_messages = [m for m in parsed_messages if m["role"] != "system"]
+        cache = {}
 
         async with self.client.messages.stream(
             model=self.model,
@@ -54,165 +99,69 @@ class Anthropic(Provider):
             tools=tool_definitions,
             **self.args
         ) as stream:
-            async for event in await self._as_messages(stream):
-                yield event
+            async for event in stream:
+                for msg in self._from_anthropic(event, cache):
+                    yield msg
 
-    @staticmethod
-    async def map_message(message: Message) -> dict:
-        match message:
-            case UserMessage(content=content):
-                def map_content(item: MessageContent) -> list[dict]:
-                    match item:
-                        case ImageURL(url=url):
-                            return [{"type": "image", "source": {"type": "url", "url": url}}]
-                        case ImageBase64(base64=base64_str):
-                            return [{"type": "image",
-                                     "source": {"type": "base64", "media_type": "image/jpeg", "data": base64_str}}]
-                        case str() as text:
-                            return [{"type": "text", "text": text}]
-                        case list() as content_list:
-                            return [mapped for c in content_list for mapped in map_content(c)]
-                        case _:
-                            raise ValueError(f"Invalid message type: {type(item)}")
+    def _from_anthropic(self, event, cache: dict) -> list[Message]:
+        messages = []
 
-                return {
-                    "role": "user",
-                    "content": map_content(content)
-                }
+        if event.type == "text":
+            acc = cache.setdefault("last_assistant_message", {"accumulated": "", "stream_id": f"{uuid.uuid4()}"})
+            acc['accumulated'] += event.text
+            messages.append(AssistantMessage(content=AssistantMessage.TextChunk(
+                value=event.text,
+                accumulated=acc['accumulated'],
+                stream_id=acc['stream_id']
+            )))
 
-            case AssistantMessage(content=ToolRequest(id=id, name=name, arguments=BaseModel() as arguments)):
-                return {
-                    "role": "assistant",
-                    "content": [{
-                        "type": "tool_use",
-                        "id": id,
-                        "name": name,
-                        "input": arguments.model_dump()
-                    }]
-                }
+        elif event.type == "content_block_delta" and event.delta.type == "tool_use":
+            key = f"tool-{event.delta.id}"
+            acc = cache.get(key, {"name": event.delta.name, "accumulated": {}})
+            acc["accumulated"] = merge_json(acc.get("accumulated", {}), event.delta.input or {})
+            cache[key] = acc
+            messages.append(AssistantMessage(content=AssistantMessage.ToolUseChunk(
+                tool_use_id=event.delta.id,
+                name=acc["name"],
+                accumulated_arguments=acc["accumulated"]
+            )))
 
-            case AssistantMessage(content=ToolRequest(id=id, name=name, arguments=dict() as arguments)):
-                return {
-                    "role": "assistant",
-                    "content": [{
-                        "type": "tool_use",
-                        "id": id,
-                        "name": name,
-                        "input": arguments
-                    }]
-                }
+        elif event.type == "content_block_stop" and event.content_block.type == "tool_use":
+            acc = cache.pop("last_assistant_message", None)
+            if acc:
+                messages.append(AssistantMessage(content=AssistantMessage.TextComplete(
+                    accumulated=acc['accumulated'],
+                    stream_id=acc['stream_id']
+                )))
+            tool_id = event.content_block.id
+            tool_acc = cache.pop(f"tool-{tool_id}", {})
+            messages.append(AssistantMessage(content=AssistantMessage.ToolUse(
+                tool_use_id=tool_id,
+                name=event.content_block.name,
+                arguments=tool_acc.get("accumulated", {})
+            )))
 
-            case AssistantMessage(content=ToolRequest(id=id, name=name, arguments=str(arguments))):
-                try:
-                    parsed_args = json.loads(arguments)
-                    args_to_use = parsed_args
-                except:
-                    args_to_use = arguments
+        elif event.type == "message_stop":
+            acc = cache.pop("last_assistant_message", None)
+            if acc:
+                messages.append(AssistantMessage(content=AssistantMessage.TextComplete(
+                    accumulated=acc['accumulated'],
+                    stream_id=acc['stream_id']
+                )))
+            for key in list(cache.keys()):
+                if key.startswith("tool-"):
+                    tool_acc = cache.pop(key)
+                    tool_id = key.replace("tool-", "")
+                    messages.append(AssistantMessage(content=AssistantMessage.ToolUse(
+                        tool_use_id=tool_id,
+                        name=tool_acc["name"],
+                        arguments=tool_acc.get("accumulated", {})
+                    )))
 
-                return {
-                    "role": "assistant",
-                    "content": [{
-                        "type": "tool_use",
-                        "id": id,
-                        "name": name,
-                        "input": args_to_use
-                    }]
-                }
-
-            case AssistantMessage() as message:
-                return {
-                    "role": "assistant",
-                    "content": [{
-                        "type": "text",
-                        "text": await message.content_as_string()
-                    }]
-                }
-
-            case ToolMessage(tool_use_id=id) as message:
-                return {
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": id,
-                        "content": await message.content_as_string()
-                    }]
-                }
-
-            case Message(role=role, content=content):
-                return {
-                    "role": role,
-                    "content": [{"type": "text", "text": str(content)}]
-                }
-
-            case _:
-                raise ValueError(f"Invalid message type: {type(message)}")
-
-    @staticmethod
-    async def _as_messages(stream) -> AsyncIterable[Message]:
-        message_stream: MemoizedAsyncIterable[Message] = MemoizedAsyncIterable[Message]()
-        assistant_stream: MemoizedAsyncIterable | None = None
-
-        async def consume():
-            nonlocal message_stream, assistant_stream
-
-            try:
-                async for event in stream:
-                    match event:
-                        # Match TextEvent
-                        case event if hasattr(event, "type") and event.type == "text" and hasattr(event, "text"):
-                            if not assistant_stream:
-                                assistant_stream = MemoizedAsyncIterable[str]()
-                                await assistant_stream.emit(event.text)
-                                await message_stream.emit(AssistantMessage(content=assistant_stream))
-                            else:
-                                await assistant_stream.emit(event.text)
-
-                        case event if (hasattr(event, "type") and event.type == "content_block_stop" and
-                                       hasattr(event, "content_block") and hasattr(event.content_block, "type") and
-                                       event.content_block.type == "tool_use"):
-                            tool_block = event.content_block
-                            await message_stream.emit(AssistantMessage(
-                                content=ToolRequest(
-                                    name=tool_block.name,
-                                    id=tool_block.tool_use_id,
-                                    arguments=tool_block.input
-                                )
-                            ))
-
-                        case event if (hasattr(event, "type") and event.type == "tool_use" and
-                                       hasattr(event, "tool_use")):
-                            await message_stream.emit(AssistantMessage(
-                                content=ToolRequest(
-                                    name=event.tool_use.name,
-                                    id=event.tool_use.tool_use_id,
-                                    arguments=event.tool_use.input
-                                )
-                            ))
-
-                        case _:
-                            pass
-
-                if assistant_stream:
-                    await assistant_stream.close()
-
-                await message_stream.close()
-
-            except Exception as e:
-                if assistant_stream:
-                    await assistant_stream.close()
-                await message_stream.close()
-                raise
-
-        asyncio.create_task(consume())
-
-        return message_stream
+        return messages
 
     async def destroy(self):
-        """
-        Close and clean up resources used by the Claude provider.
-        Closes the AsyncAnthropic client.
-        """
-        if hasattr(self, 'client') and hasattr(self.client, 'close'):
+        if hasattr(self.client, 'close'):
             await self.client.close()
 
     def __repr__(self):
@@ -220,13 +169,17 @@ class Anthropic(Provider):
 
 
 @register_provider
-def anthropic(
-    client: AsyncAnthropic,
-    model: str = 'claude-3-7-sonnet-20250219',
-    **kwargs
-) -> Provider:
-    return Anthropic(
-        model=model,
-        client=client,
-        **kwargs
-    )
+def anthropic(client: AsyncAnthropic, model: str = 'claude-3-7-sonnet-20250219', **kwargs) -> Provider:
+    return Anthropic(client=client, model=model, **kwargs)
+
+
+def merge_json(old, new):
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return new
+    result = old.copy()
+    for k, v in new.items():
+        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+            result[k] = merge_json(result[k], v)
+        else:
+            result[k] = v
+    return result

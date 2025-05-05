@@ -2,7 +2,7 @@ import asyncio
 import itertools
 import uuid
 from inspect import Signature
-from typing import Callable, List, AsyncIterable, Type, Literal, overload
+from typing import Callable, List, AsyncIterable, Type, Literal, overload, Optional
 
 from pydantic import BaseModel
 
@@ -10,13 +10,13 @@ from liteagent.provider import Provider
 from .message import Message, UserMessage, Image, AssistantMessage, ToolMessage, SystemMessage
 from .prompts import TOOL_AGENT_PROMPT
 from .tool import Tool, ToolDef
-from .bus import bus
+from .bus import EventBus, create_bus
 from .events import (
     SystemMessageEvent,
     UserMessageEvent,
     TeamDispatchPartialEvent,
     ToolRequestPartialEvent,
-    TeamDispatchEvent,
+    TeamDispatchedEvent,
     ToolRequestCompleteEvent,
     ToolExecutionStartEvent,
     AssistantMessagePartialEvent,
@@ -46,6 +46,7 @@ class Agent[Out]:
     signature: Signature = None
     user_prompt_template: str = None
     _as_dispatcher: ToolDef = None
+    bus: EventBus = None
 
     def __init__(
         self,
@@ -57,7 +58,8 @@ class Agent[Out]:
         team: List['Agent'] = None,
         respond_as: Type[Out | Wrapped[Out]] = None,
         signature: Signature = None,
-        user_prompt_template: str = None
+        user_prompt_template: str = None,
+        bus: Optional[EventBus] = None
     ):
         self.name = name
         self.provider = provider
@@ -69,6 +71,9 @@ class Agent[Out]:
         self._tool_by_name = {t.name: t for t in self._all_tools}
         self.signature = signature
         self.user_prompt_template = user_prompt_template
+
+        # Use provided bus or create a new one if None
+        self.bus = bus if bus is not None else create_bus()
 
         if respond_as and (isinstance(respond_as, type) and issubclass(respond_as, BaseModel) or respond_as == str):
             self.respond_as = respond_as
@@ -92,13 +97,13 @@ class Agent[Out]:
 
         match message:
             case SystemMessage() as message:
-                await bus.emit(SystemMessageEvent(
+                await self.bus.emit(SystemMessageEvent(
                     agent=self,
                     message=message,
                     loop_id=loop_id
                 ))
             case UserMessage() as message:
-                await bus.emit(UserMessageEvent(
+                await self.bus.emit(UserMessageEvent(
                     agent=self,
                     message=message,
                     loop_id=loop_id
@@ -109,7 +114,7 @@ class Agent[Out]:
                 from . import AgentDispatcherTool
 
                 if isinstance(tool, AgentDispatcherTool):
-                    await bus.emit(TeamDispatchPartialEvent(
+                    await self.bus.emit(TeamDispatchPartialEvent(
                         agent=self,
                         tool=self.tool_by_name(chunk.name),
                         tool_id=chunk.tool_use_id,
@@ -119,7 +124,7 @@ class Agent[Out]:
                         loop_id=chunk.tool_use_id
                     ))
                 else:
-                    await bus.emit(ToolRequestPartialEvent(
+                    await self.bus.emit(ToolRequestPartialEvent(
                         agent=self,
                         tool=self.tool_by_name(chunk.name),
                         tool_id=chunk.tool_use_id,
@@ -133,7 +138,7 @@ class Agent[Out]:
                 from . import AgentDispatcherTool
 
                 if isinstance(tool, AgentDispatcherTool):
-                    await bus.emit(TeamDispatchEvent(
+                    await self.bus.emit(TeamDispatchedEvent(
                         agent=self,
                         tool_id=tool_use.tool_use_id,
                         tool=tool,
@@ -143,7 +148,7 @@ class Agent[Out]:
                         loop_id=tool_use.tool_use_id
                     ))
                 else:
-                    await bus.emit(ToolRequestCompleteEvent(
+                    await self.bus.emit(ToolRequestCompleteEvent(
                         agent=self,
                         tool_id=tool_use.tool_use_id,
                         tool=tool,
@@ -153,7 +158,7 @@ class Agent[Out]:
                         loop_id=loop_id
                     ))
 
-                    await bus.emit(ToolExecutionStartEvent(
+                    await self.bus.emit(ToolExecutionStartEvent(
                         agent=self,
                         tool=tool,
                         tool_id=tool_use.tool_use_id,
@@ -162,13 +167,13 @@ class Agent[Out]:
                         loop_id=loop_id
                     ))
             case AssistantMessage() as message if not message.complete():
-                await bus.emit(AssistantMessagePartialEvent(
+                await self.bus.emit(AssistantMessagePartialEvent(
                     agent=self,
                     message=message,
                     loop_id=loop_id
                 ))
             case AssistantMessage() as message if message.complete():
-                await bus.emit(AssistantMessageCompleteEvent(
+                await self.bus.emit(AssistantMessageCompleteEvent(
                     agent=self,
                     message=message,
                     loop_id=loop_id
@@ -183,7 +188,7 @@ class Agent[Out]:
                 from . import AgentDispatcherTool
 
                 if isinstance(tool, AgentDispatcherTool):
-                    await bus.emit(TeamDispatchFinishedEvent(
+                    await self.bus.emit(TeamDispatchFinishedEvent(
                         agent=self,
                         target_agent=tool.agent,
                         messages=message.content,
@@ -191,10 +196,10 @@ class Agent[Out]:
                         tool_id=tool_id,
                         arguments=arguments,
                         message=message,
-                        loop_id=loop_id
+                        loop_id=tool_id
                     ))
                 else:
-                    await bus.emit(ToolExecutionCompleteEvent(
+                    await self.bus.emit(ToolExecutionCompleteEvent(
                         agent=self,
                         tool=tool,
                         tool_id=tool_id,
@@ -325,7 +330,7 @@ class Agent[Out]:
         if not loop_id:
             loop_id = str(uuid.uuid4())
 
-        await bus.emit(AgentCallEvent(
+        await self.bus.emit(AgentCallEvent(
             agent=self,
             messages=messages,
             loop_id=loop_id
@@ -426,7 +431,7 @@ class Agent[Out]:
                 message=None
             )
 
-            await bus.emit(tool_execution_error)
+            await self.bus.emit(tool_execution_error)
 
             raise
 

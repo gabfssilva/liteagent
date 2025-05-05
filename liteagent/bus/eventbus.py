@@ -37,7 +37,11 @@ class _DedupCache:
         return True
 
 
-class _Bus:
+class Bus:
+    """
+    Event bus implementation for event-driven communication.
+    Each instance maintains its own event handlers and processing queue.
+    """
     def __init__(self) -> None:
         self.type_handlers: Dict[Type, List[EventHandler]] = {}
         self.queue: asyncio.Queue[Any] = asyncio.Queue()
@@ -120,4 +124,13 @@ class _Bus:
         await self.queue.join()
 
 
-bus: EventBus = _Bus()
+# Global bus instance for backward compatibility
+bus: EventBus = Bus()
+
+
+def create_bus() -> EventBus:
+    """
+    Creates a new event bus instance.
+    Use this when you need a bus dedicated to a specific component.
+    """
+    return Bus()

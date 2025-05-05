@@ -1,24 +1,25 @@
 import asyncio
 
-from liteagent import agent, bus
+from liteagent import agent
 from liteagent.events import Event
-from liteagent.providers import openai
+from liteagent.providers import openai, deepseek
 from liteagent.tools import duckduckgo, vision
 
 
-@agent(provider=openai(), tools=[duckduckgo()])
+@agent(provider=deepseek(), tools=[duckduckgo()])
 async def searcher() -> str: pass
 
 
-@agent(provider=openai(), tools=[vision(provider=openai(model='gpt-4.1'))])
+@agent(provider=deepseek(), tools=[vision(provider=openai(model='gpt-4.1'))])
 async def viewer() -> str: pass
 
 
-@agent(provider=openai(model='gpt-4.1'), team=[searcher, viewer])
+@agent(provider=deepseek(), team=[searcher, viewer])
 async def chatbot() -> str: pass
 
 
-@bus.on(Event)
+@chatbot.bus.on(Event)
+@searcher.bus.on(Event)
 async def listen(event: Event):
     print(event)
 

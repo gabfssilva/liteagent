@@ -3,7 +3,7 @@ import asyncio
 from pydantic import BaseModel
 
 from liteagent import agent, tool
-from liteagent.providers import ollama
+from liteagent.providers import anthropic
 
 
 class Person(BaseModel):
@@ -30,7 +30,7 @@ def personal_info() -> Person:
 
 
 @agent(
-    provider=ollama(model='cogito:14b'),
+    provider=anthropic(),
     tools=[personal_info],
 )
 async def hello_agent() -> str: ...

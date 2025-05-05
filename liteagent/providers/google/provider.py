@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 from typing import AsyncIterable, Type
 
@@ -8,8 +7,7 @@ from google.genai import types
 
 from liteagent import Tool
 from liteagent.internal import register_provider
-from liteagent.internal.memoized import MemoizedAsyncIterable
-from liteagent.message import ToolRequest, Message, AssistantMessage
+from liteagent.message import Message, AssistantMessage
 from liteagent.provider import Provider
 
 
@@ -51,71 +49,95 @@ class Google(Provider):
             **self.args
         )
 
-        async for message in await self._as_messages(stream, respond_as):
-            yield message
-
-    async def _as_messages(self, stream, respond_as: Type[BaseModel] = None) -> AsyncIterable[Message]:
-        message_stream: MemoizedAsyncIterable[Message] = MemoizedAsyncIterable[Message]()
-        assistant_stream: MemoizedAsyncIterable | None = None
-
-        async def consume():
-            nonlocal message_stream, assistant_stream
-
-            assistant_message = ""
-
+        cache = {}
+        
+        async for chunk in stream:
+            messages = self._from_google(chunk, cache, respond_as)
+            for message in messages:
+                yield message
+    
+    def _from_google(self, chunk, cache: dict, respond_as: Type[BaseModel] = None) -> list[Message]:
+        """Convert Google API response chunk to liteagent message format"""
+        messages = []
+        
+        # Handle tool calls
+        if hasattr(chunk, "function_calls") and chunk.function_calls:
+            # Check if we need to emit a final text complete message
+            acc = cache.pop("last_assistant_message", None)
+            if acc:
+                messages.append(AssistantMessage(content=AssistantMessage.TextComplete(
+                    accumulated=acc['accumulated'],
+                    stream_id=acc['stream_id']
+                )))
+            
+            # Clear any JSON accumulation
+            cache.pop("json_accumulator", None)
+            
+            # Process all function calls
+            for call in chunk.function_calls:
+                tool_id = str(call.tool_use_id or uuid.uuid4())
+                
+                # Create tool use message
+                messages.append(AssistantMessage(
+                    content=AssistantMessage.ToolUse(
+                        tool_use_id=tool_id,
+                        name=call.name,
+                        arguments=call.args,
+                    )
+                ))
+            
+            return messages
+        
+        # Handle JSON schema responses
+        if respond_as and hasattr(chunk, "text") and chunk.text:
+            json_acc = cache.get("json_accumulator", "")
+            json_acc += chunk.text
+            cache["json_accumulator"] = json_acc
+            
             try:
-                async for chunk in stream:
-                    if hasattr(chunk, "function_calls") and chunk.function_calls:
-                        for call in chunk.function_calls:
-                            await message_stream.emit(AssistantMessage(
-                                content=ToolRequest(
-                                    id=str(call.tool_use_id or uuid.uuid4()),
-                                    name=call.name,
-                                    arguments=call.args,
-                                )
-                            ))
+                parsed_content = respond_as.model_validate_json(json_acc)
+                # Clear any text accumulation and JSON accumulation
+                cache.pop("last_assistant_message", None)
+                cache.pop("json_accumulator", None)
+                messages.append(AssistantMessage(content=parsed_content))
+                return messages
+            except Exception:
+                # Continue accumulating
+                pass
+        
+        # Handle text responses
+        if hasattr(chunk, "text") and chunk.text:
+            acc = cache.get("last_assistant_message", None)
 
-                        if assistant_stream:
-                            await assistant_stream.close()
-                        await message_stream.close()
-                        return
+            if not acc:
+                acc = {
+                    "accumulated": "",
+                    "stream_id": f'{uuid.uuid4()}'
+                }
+                cache["last_assistant_message"] = acc
 
-                    if respond_as:
-                        assistant_message = assistant_message + chunk.text
+            acc['accumulated'] = acc['accumulated'] + chunk.text
 
-                        try:
-                            parsed_content = respond_as.model_validate_json(assistant_message)
-                            await message_stream.emit(AssistantMessage(content=parsed_content))
-
-                            if assistant_stream:
-                                await assistant_stream.close()
-                            await message_stream.close()
-                            return
-                        except Exception:
-                            continue
-
-                    if hasattr(chunk, "text") and chunk.text:
-                        if not assistant_stream:
-                            assistant_stream = MemoizedAsyncIterable[str]()
-                            await assistant_stream.emit(chunk.text)
-                            await message_stream.emit(AssistantMessage(content=assistant_stream))
-                        else:
-                            await assistant_stream.emit(chunk.text)
-
-                if assistant_stream:
-                    await assistant_stream.close()
-
-                await message_stream.close()
-
-            except Exception as e:
-                if assistant_stream:
-                    await assistant_stream.close()
-                await message_stream.close()
-                raise e
-
-        asyncio.create_task(consume())
-
-        return message_stream
+            messages.append(AssistantMessage(content=AssistantMessage.TextChunk(
+                value=chunk.text,
+                accumulated=acc['accumulated'],
+                stream_id=acc['stream_id']
+            )))
+        
+        # Handle the end of the response
+        if hasattr(chunk, "done") and chunk.done:
+            # Check if we need to send a TextComplete for text content
+            acc = cache.pop("last_assistant_message", None)
+            if acc:
+                messages.append(AssistantMessage(content=AssistantMessage.TextComplete(
+                    accumulated=acc['accumulated'],
+                    stream_id=acc['stream_id']
+                )))
+            
+            # Clear JSON accumulation as well
+            cache.pop("json_accumulator", None)
+        
+        return messages
 
     def _tool_def(self, tool: Tool) -> types.FunctionDeclaration:
         return types.FunctionDeclaration(

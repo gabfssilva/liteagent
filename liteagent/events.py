@@ -126,7 +126,7 @@ class TeamDispatchPartialEvent(TeamEvent):
 
 
 @dataclass(eq=False, kw_only=True)
-class TeamDispatchEvent(TeamEvent):
+class TeamDispatchedEvent(TeamEvent):
     arguments: JsonObject
 
 
