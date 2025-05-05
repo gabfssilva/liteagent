@@ -4,19 +4,28 @@ from typing import Type, AsyncIterable
 from openai import AsyncOpenAI, NOT_GIVEN
 from openai.lib.streaming.chat import ChatCompletionStreamEvent, ContentDoneEvent, \
     FunctionToolCallArgumentsDoneEvent, FunctionToolCallArgumentsDeltaEvent, ChunkEvent
-from openai.types.chat import ChatCompletionChunk
+from openai.types.chat import ChatCompletionChunk, ChatCompletionMessageParam, ChatCompletionSystemMessageParam, \
+    ChatCompletionUserMessageParam, ChatCompletionContentPartTextParam, \
+    ChatCompletionContentPartImageParam, ChatCompletionToolMessageParam, ChatCompletionAssistantMessageParam, \
+    ChatCompletionMessageToolCallParam
 from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
 
+from liteagent import Tool, Provider
 from liteagent.codec import to_json_str
 from liteagent.message import Message, SystemMessage, UserMessage, ImageURL, ImagePath, ToolMessage, AssistantMessage
-from liteagent import Tool, Provider
 
 
 class OpenAICompatible(Provider):
     name: str
     args: dict = {}
 
-    def __init__(self, client: AsyncOpenAI, name: str = None, model: str = 'gpt-4o-mini', **kwargs):
+    def __init__(
+        self,
+        client: AsyncOpenAI,
+        name: str = None,
+        model: str = 'gpt-4.1-mini',
+        **kwargs
+    ):
         self.client = client
         self.model = model
         self.args = kwargs
@@ -29,27 +38,9 @@ class OpenAICompatible(Provider):
         respond_as: Type,
     ) -> AsyncIterable[Message]:
         tool_definitions = [tool.definition for tool in tools] if tools else NOT_GIVEN
-
-        oai_messages = []
-        pending_tool_calls: dict[str, dict] = {}
-
-        for i, msg in enumerate(messages):
-            if isinstance(msg, AssistantMessage) and isinstance(msg.content, AssistantMessage.ToolUse):
-                tool_call_dict = await self._to_oai(msg)
-                if tool_call_dict:
-                    pending_tool_calls[msg.content.tool_use_id] = tool_call_dict
-                continue
-
-            if isinstance(msg, ToolMessage) and msg.tool_use_id in pending_tool_calls:
-                oai_messages.append(pending_tool_calls.pop(msg.tool_use_id))
-                oai_messages.append(await self._to_oai(msg))
-                continue
-
-            converted = await self._to_oai(msg)
-            if converted:
-                oai_messages.append(converted)
-
-        oai_messages.extend(pending_tool_calls.values())
+        messages = self._group_tool_uses(self, messages)
+        oai_messages = [await self._to_oai(msg) for msg in messages if await self._to_oai(msg)]
+        oai_messages = list(filter(lambda m: m is not None, oai_messages))
 
         cache: dict = {}
 
@@ -146,74 +137,110 @@ class OpenAICompatible(Provider):
                 return None
 
     @staticmethod
-    async def _to_oai(message: Message) -> dict | None:
+    async def _to_oai(message: Message) -> ChatCompletionMessageParam | None:
         match message:
-            case SystemMessage(content=content):
-                return {
-                    "role": "system",
-                    "content": content,
-                }
-
-            case UserMessage(content=str() as content):
-                return {
-                    "role": "user",
-                    "content": [{
-                        "type": "text",
-                        "text": content
-                    }]
-                }
-
-            case UserMessage(content=ImageURL(url=url)):
-                return {
-                    "role": "user",
-                    "content": [{
-                        "type": "image_url",
-                        "image_url": {"url": url}
-                    }]
-                }
-
-            case UserMessage(content=ImagePath() as image):
-                return {
-                    "role": "user",
-                    "content": [{
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/{image.image_type()};base64,{await image.as_base64()}"
-                        }
-                    }]
-                }
-
-            case ToolMessage() as message:
-                return {
-                    "role": "tool",
-                    "tool_call_id": message.tool_use_id,
-                    "content": await to_json_str(message.content),
-                }
-
-            case AssistantMessage(content=AssistantMessage.ToolUseChunk() | AssistantMessage.TextChunk()):
+            case message if not message.complete():
                 return None
 
-            case AssistantMessage(content=AssistantMessage.ToolUse(tool_use_id=id, name=name, arguments=arguments)):
-                return {
-                    "role": "assistant",
-                    "tool_calls": [{
-                        "id": id,
-                        "type": "function",
-                        "function": {
-                            "name": name,
-                            "arguments": await to_json_str(arguments)
-                        }
-                    }]
-                }
+            case SystemMessage(content=content):
+                return ChatCompletionSystemMessageParam(
+                    role="system",
+                    content=content,
+                )
 
-            case AssistantMessage() as message:
-                return {
-                    "role": "assistant",
-                    "content": await to_json_str(message.content),
-                }
+            case UserMessage(content=str() as content):
+                return ChatCompletionUserMessageParam(
+                    role="user",
+                    content=[ChatCompletionContentPartTextParam(
+                        text=content,
+                        type='text'
+                    )]
+                )
+
+            case UserMessage(content=str() as content):
+                return ChatCompletionUserMessageParam(
+                    role="user",
+                    content=[ChatCompletionContentPartTextParam(
+                        text=content,
+                        type='text'
+                    )]
+                )
+
+            case UserMessage(content=ImageURL(url=url)):
+                return ChatCompletionUserMessageParam(
+                    role="user",
+                    content=[ChatCompletionContentPartImageParam(
+                        image_url={
+                            "url": url,
+                            "detail": "auto"
+                        },
+                        type='image_url'
+                    )]
+                )
+
+            case UserMessage(content=ImagePath() as image):
+                return ChatCompletionUserMessageParam(
+                    role="user",
+                    content=[ChatCompletionContentPartImageParam(
+                        image_url={
+                            "url": f"data:image/{image.image_type()};base64,{await image.as_base64()}",
+                            "detail": "auto"
+                        },
+                        type='image_url'
+                    )]
+                )
+
+            case ToolMessage() as message:
+                return ChatCompletionToolMessageParam(
+                    role="tool",
+                    tool_call_id=message.tool_use_id,
+                    content=await to_json_str(message.content),
+                )
+
+            case AssistantMessage(
+                content=AssistantMessage.ToolUse(tool_use_id=tool_use_id, name=name, arguments=arguments)):
+                return ChatCompletionAssistantMessageParam(
+                    role='assistant',
+                    tool_calls=[
+                        ChatCompletionMessageToolCallParam(
+                            id=tool_use_id,
+                            type='function',
+                            function={
+                                "name": name,
+                                "arguments": await to_json_str(arguments)
+                            }
+                        )
+                    ]
+                )
+
+            case AssistantMessage(content=AssistantMessage.TextComplete(accumulated=content)):
+                return ChatCompletionAssistantMessageParam(
+                    role='assistant',
+                    content=content
+                )
 
             case _:
                 raise Exception(f"Unknown message: {message}")
 
+    @staticmethod
+    def _group_tool_uses(self, messages: list[Message]) -> list[Message]:
+        grouped_tool_use = []
+        pending_tool_calls = {}
+
+        for i, msg in enumerate(messages):
+            if isinstance(msg, AssistantMessage) and isinstance(msg.content, AssistantMessage.ToolUse):
+                pending_tool_calls[msg.content.tool_use_id] = msg
+                continue
+
+            if isinstance(msg, ToolMessage) and msg.tool_use_id in pending_tool_calls:
+                grouped_tool_use.append(pending_tool_calls.pop(msg.tool_use_id))
+                grouped_tool_use.append(msg)
+                continue
+
+            grouped_tool_use.append(msg)
+
+        grouped_tool_use.extend(pending_tool_calls.values())
+        return grouped_tool_use
+
     def __repr__(self):
-        return f"OpenAICompatible({self.model})"
+        return f"{self.name}({self.model})"

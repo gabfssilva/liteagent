@@ -12,7 +12,9 @@ class ChatApp(App):
     """Main chat application for the Textual interface."""
 
     CSS = """
-    MyApp {
+    $border: panel;
+    
+    ChatApp {
         height: 100%;
     }
     
@@ -22,7 +24,7 @@ class ChatApp(App):
         border: round $primary;
     }
     
-    ReactiveMarkdown > Markdown {
+    Markdown {
         height: auto;
         padding: 0 2 -1 2;
         layout: vertical;
@@ -63,14 +65,11 @@ class ChatApp(App):
     .user-message {
         margin: 0 0 1 10;
         align: left middle;
-        border: panel $secondary;
+        border: $border $secondary;
         background: $background;
         padding: 1;
         border-title-align: left;
         border-subtitle-align: right;
-        border-bottom: panel $secondary;
-        border-right: panel $secondary;
-        border-left: panel $secondary;
         border-subtitle-background: $secondary;
         border-subtitle-color: $background;
     }
@@ -78,15 +77,12 @@ class ChatApp(App):
     .assistant-message {
         margin: 0 10 1 0;
         align: right middle;
-        border: panel $secondary;
+        border: $border $secondary;
         background: $background;
         padding: 1 1 1 1;
         color: $foreground-darken-3;
         border-title-align: left;
         border-subtitle-align: right;
-        border-bottom: panel $secondary;
-        border-right: panel $secondary;
-        border-left: panel $secondary;
         border-subtitle-background: $secondary;
         border-subtitle-color: $background;
     }
@@ -94,14 +90,11 @@ class ChatApp(App):
     .assistant-message-inner {
         margin: 0 0 1 0;
         align: left middle;
-        border: panel $secondary;
+        border: $border $secondary;
         background: $background;
         padding: 1 1 1 1;
         border-title-align: left;
         border-subtitle-align: right;
-        border-bottom: panel $secondary;
-        border-right: panel $secondary;
-        border-left: panel $secondary;
         border-subtitle-background: $secondary;
         border-subtitle-color: $background;
     }
@@ -110,13 +103,10 @@ class ChatApp(App):
         margin: 0 10 1 0;
         align: right middle;
         padding: 1 1 1 1;
-        border: panel $accent;
+        border: $border $accent;
         background: $background;
         border-title-align: left;
         border-subtitle-align: right;
-        border-bottom: panel $accent;
-        border-right: panel $accent;
-        border-left: panel $accent;
         border-subtitle-background: $accent;
         border-subtitle-color: $background;
     }
@@ -125,14 +115,11 @@ class ChatApp(App):
         margin: 0 0 1 0;
         padding: 1 1 1 1;
         align: left middle;
-        border: panel $accent;
+        border: $border $accent;
         background: $background;
         border-title-align: left;
         border-subtitle-align: right;
         border-subtitle-align: right;
-        border-bottom: panel $accent;
-        border-right: panel $accent;
-        border-left: panel $accent;
         border-subtitle-background: $accent;
         border-subtitle-color: $background;
     }
@@ -141,7 +128,7 @@ class ChatApp(App):
         align: left middle;
     }
     
-    InternalChatView {
+    InternalChatWidget {
         overflow-y: auto;
         max-height: 20;
         background: $background;
@@ -168,7 +155,7 @@ class ChatApp(App):
         self._theme = theme
 
     def compose(self) -> ComposeResult:
-        with ChatView(agent=self._agent, refresh_rate=1 / 30, follow=True):
+        with ChatWidget(agent=self._agent, refresh_rate=1 / 30, follow=True):
             from art import text2art
             yield Static(text2art(self._logo, font='tarty2'), id="chat-art")
         yield Input(placeholder="How can I help you?")
@@ -181,7 +168,7 @@ class ChatApp(App):
     @on(Input.Submitted)
     def on_input(self, event: Input.Submitted) -> None:
         prompt = event.value
-        chat_view = self.query_one(ChatView)
+        chat_view = self.query_one(ChatWidget)
         chat_view.mount(UserMessageWidget(prompt))
         chat_view.scroll_end()
         event.input.clear()

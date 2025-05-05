@@ -8,14 +8,14 @@ from liteagent.tools import vision
 @agent(
     description="You're a vision agent. You explain what you see based on the user input.",
     provider=openai(model='o3-mini'),
-    tools=[vision(provider=openai(model='gpt-4o-mini'))]
+    tools=[vision(provider=openai(model='gpt-4.1-mini'))]
 )
 async def vision_via_tool_agent() -> str: ...
 
 
 @agent(
     description="You're a vision agent. You explain what you see based on the user input.",
-    provider=openai(model='gpt-4o-mini'),
+    provider=openai(model='gpt-4.1-mini'),
 )
 async def vision_agent(question: str, image: ImageURL) -> str: ...
 

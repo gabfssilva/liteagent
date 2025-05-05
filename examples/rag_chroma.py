@@ -36,7 +36,7 @@ async def main():
     )
 
     @agent(
-        provider=openai(model="gpt-4o-mini"),
+        provider=openai(model="gpt-4.1-mini"),
         tools=[
             await vector_store(
                 store=chroma_in_memory(),

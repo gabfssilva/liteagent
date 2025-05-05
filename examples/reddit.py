@@ -7,7 +7,7 @@ from liteagent.tools.reddit import reddit
 
 
 @agent(
-    provider=openai(model="gpt-4o-mini"),
+    provider=openai(model="gpt-4.1-mini"),
     tools=[
         reddit(
             client_id=os.environ["REDDIT_CLIENT_ID"],

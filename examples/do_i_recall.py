@@ -6,7 +6,7 @@ from liteagent.tools import memoria, ipify
 
 
 @agent(
-    provider=openai(model='gpt-4o-mini'),
+    provider=openai(model='gpt-4.1-mini'),
     tools=[memoria(), ipify]
 )
 async def memorizer() -> str: ...

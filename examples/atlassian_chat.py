@@ -4,8 +4,8 @@ import os
 from atlassian import Confluence, Jira
 
 from liteagent import agent, chat
-from liteagent.providers import openai, deepseek
-from liteagent.tools import confluence, jira, memoria, files
+from liteagent.providers import openai
+from liteagent.tools import confluence, jira, files
 
 
 @chat.terminal(logo="Atlassian")
@@ -25,7 +25,7 @@ from liteagent.tools import confluence, jira, memoria, files
             cloud=True
         ))
     ],
-    provider=openai(model="gpt-4.1"),
+    provider=openai(),
     description="""
         You are an Atlassian Agent specialized in combining Jira (for issue tracking) and Confluence (for documentation) data.
         

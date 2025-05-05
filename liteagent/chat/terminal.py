@@ -9,7 +9,7 @@ from ..message import Message
 def terminal(
     agent_f: Optional[Agent[AsyncIterable[Message]]] = None,
     *,
-    theme: str = "solarized-light",
+    theme: str = "textual-dark",
     logo: str = None,
 ):
     """

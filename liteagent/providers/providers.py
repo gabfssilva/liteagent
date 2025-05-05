@@ -1,6 +1,8 @@
 import os
 from functools import partial
 
+import httpx
+
 from liteagent import Provider
 from liteagent.internal.cleanup import register_provider
 
@@ -115,7 +117,6 @@ def anthropic(
             "Please install it with 'pip install \"liteagents[anthropic]\"'"
         )
 
-
 openai = partial(
     openai_compatible,
     name='OpenAI',
@@ -126,8 +127,8 @@ openai = partial(
 openrouter = partial(
     openai_compatible,
     name='OpenRouter',
-    base_url='https://api.openrouter.ai/v1',
-    model='openai/gpt-3.5-turbo',
+    base_url='https://openrouter.ai/api/v1',
+    model='openai/gpt-4.1-mini',
     api_key=os.getenv('OPENROUTER_API_KEY'),
     max_tokens=8192
 )

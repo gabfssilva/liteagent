@@ -28,7 +28,8 @@ class ReactiveMarkdown(Static):
         yield Markdown(self.markdown)
 
     async def on_mount(self) -> None:
-        self.run_worker(self._watch_content())
+        if not self.finished:
+            self.run_worker(self._watch_content())
 
     async def _watch_content(self):
         while not self.finished:
@@ -36,7 +37,7 @@ class ReactiveMarkdown(Static):
                 await self.query_one(Markdown).update(self.markdown)
 
                 if self.follow:
-                    chat_view = self.query_ancestor("ChatView")
+                    chat_view = self.query_ancestor("ChatWidget")
                     if chat_view:
                         chat_view.scroll_end()
 

@@ -22,7 +22,7 @@ class AzureAI(Provider):
         self,
         name: str = "AzureAI",
         client: Optional[ChatCompletionsClient] = None,
-        model: str = "gpt-4o-mini",
+        model: str = "gpt-4.1-mini",
         base_url: str = "https://models.inference.ai.azure.com",
         api_key: str = None,
         **kwargs
@@ -293,7 +293,7 @@ class AzureAI(Provider):
 
 @register_provider
 def azureai(
-    model: str = 'gpt-4o-mini',
+    model: str = 'gpt-4.1-mini',
     base_url: str = 'https://models.inference.ai.azure.com',
     api_key: str = None,
     **kwargs

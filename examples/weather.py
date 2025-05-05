@@ -8,7 +8,7 @@ from liteagent.tools import openmeteo
 @agent(
     description="You're a weather agent. Use your tools to fetch information about the weather.",
     tools=[openmeteo],
-    provider=openai(model='gpt-4o-mini'),
+    provider=openai(model='gpt-4.1-mini'),
 )
 async def weather_agent(city: str) -> str:
     """

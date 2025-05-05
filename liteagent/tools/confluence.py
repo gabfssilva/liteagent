@@ -177,8 +177,7 @@ class ConfluenceTools(Tools):
             )
 
             spaces = result['results']
-
-            has_next = spaces['_links'].get('next', None)
+            has_next = result.get('_links', {}).get('next')
 
             if not has_next:
                 break

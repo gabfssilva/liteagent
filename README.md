@@ -149,7 +149,7 @@ from liteagent.tools import openmeteo
 @agent(
     description="You're a weather agent. Use your tools to fetch information about the weather.",
     tools=[openmeteo],
-    provider=openai(model='gpt-4o-mini'),
+    provider=openai(model='gpt-4.1-mini'),
 )
 async def weather_agent(city: str) -> str:
     """
@@ -177,7 +177,7 @@ from liteagent.vector import in_memory, token_chunking
 from liteagent.vector.loaders import from_pdf
 
 @agent(
-    provider=openai(model="gpt-4o-mini"),
+    provider=openai(model="gpt-4.1-mini"),
     tools=[vector_store],
     description="You are a helpful assistant that answers questions based on the provided documents."
 )

@@ -18,10 +18,10 @@ from liteagent.chat.textual.table import plot_table
 from liteagent.chat.textual.helpers import pretty_incomplete_json
 from .assistant_message import AssistantMessageWidget
 from .tool_use import ToolUseWidget
-from .internal_chat import InternalChatView
+from .internal_chat import InternalChatWidget
 
 
-class ChatView(VerticalScroll):
+class ChatWidget(VerticalScroll):
     """The main chat view that displays conversation and manages event handlers."""
 
     def __init__(
@@ -75,6 +75,7 @@ class ChatView(VerticalScroll):
                 await self.mount(widget)
 
             widget.assistant_content = message.content.accumulated
+            return True
 
         @self.bus.on(AssistantMessageCompleteEvent)
         async def handle_assistant_message(event: AssistantMessageCompleteEvent):
@@ -94,7 +95,6 @@ class ChatView(VerticalScroll):
             try:
                 widget = self.query_one(f"#{widget_id}", AssistantMessageWidget)
             except Exception:
-                # Widget doesn't exist yet, create it first with the complete content
                 widget = AssistantMessageWidget(
                     id=widget_id,
                     agent=event.agent,
@@ -137,6 +137,8 @@ class ChatView(VerticalScroll):
                     follow=self.follow,
                 ))
 
+            return True
+
         @self.bus.on(TeamDispatchPartialEvent)
         async def handle_team_dispatch_start(event: TeamDispatchPartialEvent):
             if self._parent_id and self._completed:
@@ -151,14 +153,14 @@ class ChatView(VerticalScroll):
             widget_id = f"{event.target_agent.name}_{event.tool_id}"
 
             try:
-                widget = self.query_one(f"#{widget_id}", InternalChatView)
+                widget = self.query_one(f"#{widget_id}", InternalChatWidget)
             except Exception:
                 name = event.tool.name
                 arguments = event.accumulated_arguments
                 agent = event.target_agent
 
                 try:
-                    widget = InternalChatView(
+                    widget = InternalChatWidget(
                         id=widget_id,
                         name=name,
                         prompt=arguments,
@@ -177,7 +179,9 @@ class ChatView(VerticalScroll):
                 prompt = f'```json\n{pretty_incomplete_json(prompt)}\n```'
                 widget.update_prompt(prompt)
             except Exception as e:
-                return
+                self.notify(message=str(e), timeout=5, severity="error")
+
+            return True
 
         @self.bus.on(TeamDispatchedEvent)
         async def handle_team_dispatch_complete(event: TeamDispatchedEvent):
@@ -193,7 +197,7 @@ class ChatView(VerticalScroll):
             widget_id = f"{event.target_agent.name}_{event.tool_id}"
 
             try:
-                widget = self.query_one(f"#{widget_id}", InternalChatView)
+                widget = self.query_one(f"#{widget_id}", InternalChatWidget)
                 widget.args_completed()
             except Exception as e:
                 name = event.tool.name
@@ -201,7 +205,7 @@ class ChatView(VerticalScroll):
                 prompt = f'```json\n{await to_json_str(event.arguments, indent=2)}\n```'
 
                 try:
-                    widget = InternalChatView(
+                    widget = InternalChatWidget(
                         id=widget_id,
                         name=name,
                         prompt=prompt,
@@ -214,7 +218,7 @@ class ChatView(VerticalScroll):
                     await self.mount(widget)
                     widget.args_completed()
                 except Exception as e:
-                    return
+                    self.notify(message=str(e), timeout=5, severity="error")
 
             return False
 
@@ -232,12 +236,11 @@ class ChatView(VerticalScroll):
             widget_id = f"{event.target_agent.name}_{event.tool_id}"
             
             try:
-                widget = self.query_one(f"#{widget_id}", InternalChatView)
+                widget = self.query_one(f"#{widget_id}", InternalChatWidget)
             except Exception:
-                # Widget doesn't exist yet, create it first
                 try:
                     prompt = f'```json\n{await to_json_str(event.arguments, indent=2)}\n```'
-                    widget = InternalChatView(
+                    widget = InternalChatWidget(
                         id=widget_id,
                         name=event.tool.name,
                         prompt=prompt,
@@ -248,12 +251,15 @@ class ChatView(VerticalScroll):
                     )
                     await self.mount(widget)
                 except Exception as e:
-                    return
+                    self.notify(message=str(e), timeout=5, severity="error")
+                    return True
             
             try:
                 widget.complete(False)
             except Exception as e:
-                pass
+                self.notify(message=str(e), timeout=5, severity="error")
+
+            return True
 
         @self.bus.on(ToolExecutionCompleteEvent)
         async def handle_tool_exec_complete(event: ToolExecutionCompleteEvent):
@@ -274,11 +280,10 @@ class ChatView(VerticalScroll):
             try:
                 widget = self.query_one(f"#{tool_widget_id}", ToolUseWidget)
             except Exception:
-                # Widget doesn't exist yet, create it first
                 widget = ToolUseWidget(
-                    tool_widget_id,
-                    tool,
-                    event.arguments,
+                    id=tool_widget_id,
+                    tool=tool,
+                    initial_args=await to_json_str(event.arguments, indent=2),
                     classes="tool-message" if not self._parent_id else "tool-message-inner",
                     refresh_rate=self.refresh_rate,
                     follow=self.follow,

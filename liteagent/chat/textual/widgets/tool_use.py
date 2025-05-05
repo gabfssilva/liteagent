@@ -5,7 +5,7 @@ import re
 from textual.app import ComposeResult
 from textual.widgets import TabbedContent
 from textual.content import Content
-from textual.reactive import var
+from textual.reactive import var, reactive
 
 from liteagent import Tool
 from .base_widget import BaseMessageWidget
@@ -17,6 +17,10 @@ class ToolUseWidget(BaseMessageWidget):
 
     tool_name = var("")
     tool_emoji = var("")
+    arguments = reactive("")
+    result = reactive("")
+    finished_arguments = reactive(False)
+    finished_result = reactive(False)
 
     def __init__(
         self,
@@ -35,7 +39,8 @@ class ToolUseWidget(BaseMessageWidget):
             subtitle=None,
             refresh_rate=refresh_rate,
             follow=follow,
-            classes=classes
+            classes=classes,
+            collapsed=True
         )
         self.tool_name = formatted_name
         self.tool_emoji = tool.emoji
@@ -46,38 +51,55 @@ class ToolUseWidget(BaseMessageWidget):
     def _camel_to_words(text: str) -> str:
         return re.sub(r'(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])', ' ', text)
 
-    def compose(self) -> ComposeResult:
+    def message_children(self) -> ComposeResult:
         with TabbedContent("Arguments", "Result"):
             yield ReactiveMarkdown(
-                markdown=self.initial_args or "👻",
+                markdown=self.arguments or "👻",
                 id=f"{self.id}_args",
                 refresh_rate=self.refresh_rate,
                 follow=self.follow,
+                finished=self.finished_arguments,
             )
 
             yield ReactiveMarkdown(
-                markdown="",
+                markdown=self.result,
                 id=f"{self.id}_result",
                 refresh_rate=self.refresh_rate,
-                follow=self.follow,
+                finished=self.finished_result,
             )
 
+    def watch_arguments(self, arguments: str):
+        if not self.collapsed:
+            try:
+                self.query_one(f"#{self.id}_args", ReactiveMarkdown).update(arguments)
+            except Exception as e:
+                pass
+
+    def watch_result(self, result: str):
+        if not self.collapsed:
+            try:
+                self.query_one(f"#{self.id}_result", ReactiveMarkdown).update(result)
+            except Exception as e:
+                pass
+
     def watch_state(self, state: str) -> None:
-        """Override base method to also finish markdown widgets."""
         super().watch_state(state)
         if state in ["completed", "failed"]:
-            self.query_one(f"#{self.id}_result", ReactiveMarkdown).finish()
-            self.query_one(f"#{self.id}_args", ReactiveMarkdown).finish()
+            self.finished_arguments = True
+            self.finished_result = True
+
+            try:
+                self.query_one(f"#{self.id}_result", ReactiveMarkdown).finish()
+            except Exception as e:
+                pass
+
+            try:
+                self.query_one(f"#{self.id}_args", ReactiveMarkdown).finish()
+            except Exception as e:
+                pass
 
     def append_args(self, accumulated: str) -> None:
-        try:
-            args = self.query_one(f"#{self.id}_args", ReactiveMarkdown)
-            args.update('```json\n' + accumulated + '\n```')
-        except Exception as e:
-            self.app.exit(message=str(e))
+        self.arguments = '```json\n' + accumulated + '\n```'
 
     def append_result(self, json_result: str) -> None:
-        try:
-            self.query_one(f"#{self.id}_result", ReactiveMarkdown).update('```json\n' + json_result + '\n```')
-        except Exception as e:
-            self.app.exit(message=str(e))
+        self.result = '```json\n' + json_result + '\n```'

@@ -4,18 +4,18 @@ from .reactive_markdown import ReactiveMarkdown
 from .base_widget import BaseMessageWidget
 from .user_message import UserMessageWidget
 from .assistant_message import AssistantMessageWidget
-from .internal_chat import InternalChatView
+from .internal_chat import InternalChatWidget
 from .widget_renderer import WidgetRenderer
 from .tool_use import ToolUseWidget
-from .chat_view import ChatView
+from .chat_view import ChatWidget
 
 __all__ = [
     "ReactiveMarkdown",
     "BaseMessageWidget",
     "UserMessageWidget",
     "AssistantMessageWidget",
-    "InternalChatView",
+    "InternalChatWidget",
     "WidgetRenderer",
     "ToolUseWidget",
-    "ChatView",
+    "ChatWidget",
 ]

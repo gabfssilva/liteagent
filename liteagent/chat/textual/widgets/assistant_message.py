@@ -34,16 +34,26 @@ class AssistantMessageWidget(BaseMessageWidget):
         )
         self.provider_name = agent.provider
 
-    def compose(self) -> ComposeResult:
-        yield ReactiveMarkdown(refresh_rate=self.refresh_rate, follow=self.follow)
+    def message_children(self) -> ComposeResult:
+        yield ReactiveMarkdown(
+            refresh_rate=self.refresh_rate,
+            follow=self.follow,
+            markdown=self.assistant_content,
+            finished=self.finished
+        )
 
     def watch_assistant_content(self, assistant_content: str):
-        self.query_one(ReactiveMarkdown).update(assistant_content)
+        if not self.collapsed:
+            try:
+                self.query_one(ReactiveMarkdown).update(assistant_content)
+            except Exception as e:
+                pass
 
     def watch_finished(self, finished: bool):
         if finished:
             self.complete()
-            self.query_one(ReactiveMarkdown).finish()
+            if not self.collapsed:
+                self.query_one(ReactiveMarkdown).finish()
 
     def finish(self):
         self.finished = True

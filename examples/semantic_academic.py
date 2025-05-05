@@ -6,7 +6,7 @@ from liteagent.tools import semantic_scholar
 
 @agent(
     description="An agent specialized in academic paper research using Semantic Scholar",
-    provider=providers.openai(model="gpt-4o-mini"),
+    provider=providers.openai(model="gpt-4.1-mini"),
     tools=[semantic_scholar()]
 )
 async def academic_research_agent(query: str) -> str:

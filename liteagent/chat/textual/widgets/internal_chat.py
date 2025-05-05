@@ -9,7 +9,7 @@ from liteagent import Agent
 from .reactive_markdown import ReactiveMarkdown
 
 
-class InternalChatView(Static):
+class InternalChatWidget(Static):
     """Widget that displays an internal chat view for team dispatches."""
     
     prompt = reactive("")
@@ -51,9 +51,9 @@ class InternalChatView(Static):
         with TabbedContent("Prompt", "Result", classes="internal-chat-view"):
             yield ReactiveMarkdown(self._prompt, refresh_rate=self.refresh_rate)
             
-            # To avoid circular imports, import ChatView here
-            from .chat_view import ChatView
-            yield ChatView(
+            # To avoid circular imports, import ChatWidget here
+            from .chat_view import ChatWidget
+            yield ChatWidget(
                 agent=self.agent,
                 parent_id=self.id,
                 refresh_rate=1 / 3,
@@ -89,14 +89,14 @@ class InternalChatView(Static):
             self._timer.stop()
             self._elapsed_timer.stop()
             # We need to avoid circular imports
-            from .chat_view import ChatView
-            self.query_one(ChatView).mark_completed()
+            from .chat_view import ChatWidget
+            self.query_one(ChatWidget).mark_completed()
             self.border_title = f"🤖 {self.pretty_name} 🟢"
         elif state == "failed":
             self._timer.stop()
             self._elapsed_timer.stop()
-            from .chat_view import ChatView
-            self.query_one(ChatView).mark_completed()
+            from .chat_view import ChatWidget
+            self.query_one(ChatWidget).mark_completed()
             self.border_title = f"🤖 {self.pretty_name} 🔴"
 
     def watch_elapsed(self, elapsed):
@@ -113,5 +113,5 @@ class InternalChatView(Static):
         error_message = f"error: {error}"
         
         # We need to avoid circular imports
-        from .chat_view import ChatView
-        await self.query_one(ChatView).mount(ReactiveMarkdown(error_message))
+        from .chat_view import ChatWidget
+        await self.query_one(ChatWidget).mount(ReactiveMarkdown(error_message))
