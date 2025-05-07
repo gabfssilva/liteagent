@@ -17,8 +17,8 @@ class ToolUseWidget(BaseMessageWidget):
 
     tool_name = var("")
     tool_emoji = var("")
-    arguments = reactive("")
-    result = reactive("")
+    arguments = reactive("", init=False)
+    result = reactive("", init=False)
     finished_arguments = reactive(False)
     finished_result = reactive(False)
 
@@ -69,18 +69,10 @@ class ToolUseWidget(BaseMessageWidget):
             )
 
     def watch_arguments(self, arguments: str):
-        if not self.collapsed:
-            try:
-                self.query_one(f"#{self.id}_args", ReactiveMarkdown).update(arguments)
-            except Exception as e:
-                pass
+        self.query_one(f"#{self.id}_args", ReactiveMarkdown).update(arguments)
 
     def watch_result(self, result: str):
-        if not self.collapsed:
-            try:
-                self.query_one(f"#{self.id}_result", ReactiveMarkdown).update(result)
-            except Exception as e:
-                pass
+        self.query_one(f"#{self.id}_result", ReactiveMarkdown).update(result)
 
     def watch_state(self, state: str) -> None:
         super().watch_state(state)
@@ -88,15 +80,8 @@ class ToolUseWidget(BaseMessageWidget):
             self.finished_arguments = True
             self.finished_result = True
 
-            try:
-                self.query_one(f"#{self.id}_result", ReactiveMarkdown).finish()
-            except Exception as e:
-                pass
-
-            try:
-                self.query_one(f"#{self.id}_args", ReactiveMarkdown).finish()
-            except Exception as e:
-                pass
+            self.query_one(f"#{self.id}_result", ReactiveMarkdown).finish()
+            self.query_one(f"#{self.id}_args", ReactiveMarkdown).finish()
 
     def append_args(self, accumulated: str) -> None:
         self.arguments = '```json\n' + accumulated + '\n```'

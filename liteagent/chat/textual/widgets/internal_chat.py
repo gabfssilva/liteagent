@@ -1,22 +1,21 @@
 """Internal chat view widget for displaying team dispatches in the chat interface."""
 
-import time
 from textual.app import ComposeResult
-from textual.widgets import Static, TabbedContent
+from textual.widgets import TabbedContent
 from textual.reactive import reactive
 
 from liteagent import Agent
+from .base_widget import BaseMessageWidget
 from .reactive_markdown import ReactiveMarkdown
 
 
-class InternalChatWidget(Static):
+class InternalChatWidget(BaseMessageWidget):
     """Widget that displays an internal chat view for team dispatches."""
-    
-    prompt = reactive("")
-    state = reactive("waiting")
-    frame = reactive(0)
-    elapsed = reactive(0)
-    start = reactive(0)
+
+    prompt = reactive("", init=False)
+
+    finished_prompt = reactive(False, init=False)
+    finished_result = reactive(False, init=False)
 
     def __init__(
         self,
@@ -29,89 +28,78 @@ class InternalChatWidget(Static):
         refresh_rate: float = 0.5,
         classes: str = "tool-message"
     ):
+        pretty_name = name.replace("redirection", "").replace("_", " ").title()
+
         super().__init__(
             id=id,
-            classes=classes
+            name=pretty_name,
+            emoji="🤖",
+            subtitle=f'{agent.provider}',
+            refresh_rate=refresh_rate,
+            follow=False,
+            classes=classes,
+            collapsed=True
         )
 
         self.agent_name = name
-        self.pretty_name = name.replace("redirection", "").replace("_", " ").title()
 
         if prompt and isinstance(prompt, dict) and len(prompt) == 1 and "prompt" in prompt:
             prompt = prompt["prompt"]
 
-        self._prompt = prompt or ""
+        self.prompt = prompt or ""
         self.agent = agent
-        self.border_title = f"🤖 {self.pretty_name} ⚪"
-        self.border_subtitle = f"{agent.provider}"
         self.loop_id = loop_id
-        self.refresh_rate = refresh_rate
 
-    def compose(self) -> ComposeResult:
+        from .chat_view import ChatWidget
+
+        self.chat_widget: ChatWidget = ChatWidget(
+            agent=self.agent,
+            parent_id=self.id,
+            refresh_rate=1 / 3,
+            follow=False,
+            loop_id=self.loop_id,
+            id=f"{self.id}_chat"
+        )
+
+    def message_children(self) -> ComposeResult:
         with TabbedContent("Prompt", "Result", classes="internal-chat-view"):
-            yield ReactiveMarkdown(self._prompt, refresh_rate=self.refresh_rate)
-            
-            # To avoid circular imports, import ChatWidget here
-            from .chat_view import ChatWidget
-            yield ChatWidget(
-                agent=self.agent,
-                parent_id=self.id,
-                refresh_rate=1 / 3,
-                follow=False,
-                loop_id=self.loop_id,
+            yield ReactiveMarkdown(
+                markdown=self.prompt,
+                refresh_rate=self.refresh_rate,
+                id=f"{self.id}_prompt",
+                finished=self.finished_prompt,
+                follow=self.follow,
             )
 
-    def on_mount(self) -> None:
-        self.state = "waiting"
-        self.start = time.perf_counter()
-        self._timer = self.set_interval(0.5, self._blink)
-        self._elapsed_timer = self.set_interval(0.1, self._elapsed)
+            yield self.chat_widget
 
-    def _elapsed(self):
-        self.elapsed = time.perf_counter() - self.start
-
-    def _blink(self) -> None:
-        if self.state == "waiting":
-            if self.frame == 0:
-                self.frame = 1
-            else:
-                self.frame = 0
+    def watch_prompt(self, prompt: str):
+        self.query_one(f"#{self.id}_prompt", ReactiveMarkdown).update(prompt)
 
     def update_prompt(self, prompt):
-        self.query_one(ReactiveMarkdown).update(prompt)
-
-    def watch_frame(self, frame):
-        emoji = "⚪" if frame == 0 else "  "
-        self.border_title = f"🤖 {self.pretty_name} {emoji}"
+        self.prompt = prompt
 
     def watch_state(self, state: str) -> None:
-        if state == "completed":
-            self._timer.stop()
-            self._elapsed_timer.stop()
-            # We need to avoid circular imports
-            from .chat_view import ChatWidget
-            self.query_one(ChatWidget).mark_completed()
-            self.border_title = f"🤖 {self.pretty_name} 🟢"
-        elif state == "failed":
-            self._timer.stop()
-            self._elapsed_timer.stop()
-            from .chat_view import ChatWidget
-            self.query_one(ChatWidget).mark_completed()
-            self.border_title = f"🤖 {self.pretty_name} 🔴"
+        super().watch_state(state)
+        
+        if state == "completed" or state == "failed":
+            self.finished_prompt = True
+            self.finished_result = True
 
-    def watch_elapsed(self, elapsed):
-        self.border_subtitle = f"{self.agent.provider} {elapsed:.1f}s"
+    def watch_finished_result(self, finished_result: bool):
+        if finished_result:
+            from .chat_view import ChatWidget
+            self.query_one(f"#{self.id}_chat", ChatWidget).mark_completed()
 
-    def complete(self, failed: bool) -> None:
-        self.state = "failed" if failed else "completed"
+    def watch_finished_prompt(self, finished_prompt: bool):
+        if finished_prompt:
+            self.query_one(f"#{self.id}_prompt", ReactiveMarkdown).finish()
 
     def args_completed(self):
-        self.query_one(ReactiveMarkdown).finish()
+        self.finished_prompt = True
 
     async def handle_error(self, error) -> None:
         self.state = "failed"
         error_message = f"error: {error}"
-        
-        # We need to avoid circular imports
         from .chat_view import ChatWidget
-        await self.query_one(ChatWidget).mount(ReactiveMarkdown(error_message))
+        await self.query_one(f"#{self.id}_chat", ChatWidget).mount(ReactiveMarkdown(error_message))

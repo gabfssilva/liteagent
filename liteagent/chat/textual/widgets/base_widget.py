@@ -4,7 +4,7 @@ import time
 from abc import abstractmethod
 
 from textual.app import ComposeResult
-from textual.events import Event, Click
+from textual.events import Click
 from textual.widgets import Static
 from textual.reactive import reactive
 
@@ -16,7 +16,7 @@ class BaseMessageWidget(Static):
     frame = reactive(0)
     elapsed = reactive(0)
     start = reactive(0)
-    collapsed = reactive(True, init=False, recompose=True)
+    collapsed = reactive(True, init=False, recompose=False)
 
     def __init__(
         self,
@@ -45,6 +45,17 @@ class BaseMessageWidget(Static):
         if self == event.widget:
             self.collapsed = not self.collapsed
 
+            if not self.collapsed:
+                self.styles.padding = (1, 1, 1, 1)
+            else:
+                self.styles.padding = (-1, -1, 1, -1)
+
+            for child in self.children:
+                child.display = not self.collapsed
+
+            self.border_title = self.current_title
+            self.border_subtitle = self.current_subtitle
+
         event.stop()
 
     @property
@@ -59,6 +70,14 @@ class BaseMessageWidget(Static):
         self.start = time.perf_counter()
         self._elapsed_timer = self.set_interval(0.1, self._elapsed)
         self._blink_timer = self.set_interval(0.5, self._blink)
+
+        if not self.collapsed:
+            self.styles.padding = (1, 1, 1, 1)
+        else:
+            self.styles.padding = (-1, -1, 1, -1)
+
+        for child in self.children:
+            child.display = not self.collapsed
 
     def _elapsed(self):
         self.elapsed = time.perf_counter() - self.start
@@ -75,18 +94,14 @@ class BaseMessageWidget(Static):
         self.border_title = self.current_title
 
     @abstractmethod
-    def message_children(self): pass
+    def message_children(self):
+        pass
 
     def compose(self) -> ComposeResult:
         self.border_title = self.current_title
         self.border_subtitle = self.current_subtitle
 
-        if not self.collapsed:
-            self.styles.padding = (1, 1, 1, 1)
-            yield from self.message_children()
-        else:
-            self.styles.padding = (-1, -1, 0, -1)
-            self.remove_children()
+        yield from self.message_children()
 
     @property
     def state_emoji(self):

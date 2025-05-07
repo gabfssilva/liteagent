@@ -12,7 +12,7 @@ class ChatApp(App):
     """Main chat application for the Textual interface."""
 
     CSS = """
-    $border: panel;
+    $border: round;
     
     ChatApp {
         height: 100%;
@@ -69,7 +69,9 @@ class ChatApp(App):
         background: $background;
         padding: 1;
         border-title-align: left;
-        border-subtitle-align: right;
+        border-title-background: $secondary;
+        border-title-color: $background;
+        border-subtitle-align: left;
         border-subtitle-background: $secondary;
         border-subtitle-color: $background;
     }
@@ -82,7 +84,9 @@ class ChatApp(App):
         padding: 1 1 1 1;
         color: $foreground-darken-3;
         border-title-align: left;
-        border-subtitle-align: right;
+        border-title-background: $secondary;
+        border-title-color: $background;
+        border-subtitle-align: left;
         border-subtitle-background: $secondary;
         border-subtitle-color: $background;
     }
@@ -94,7 +98,9 @@ class ChatApp(App):
         background: $background;
         padding: 1 1 1 1;
         border-title-align: left;
-        border-subtitle-align: right;
+        border-title-background: $secondary;
+        border-title-color: $background;
+        border-subtitle-align: left;
         border-subtitle-background: $secondary;
         border-subtitle-color: $background;
     }
@@ -106,7 +112,9 @@ class ChatApp(App):
         border: $border $accent;
         background: $background;
         border-title-align: left;
-        border-subtitle-align: right;
+        border-title-background: $accent;
+        border-title-color: $background;
+        border-subtitle-align: left;
         border-subtitle-background: $accent;
         border-subtitle-color: $background;
     }
@@ -118,8 +126,9 @@ class ChatApp(App):
         border: $border $accent;
         background: $background;
         border-title-align: left;
-        border-subtitle-align: right;
-        border-subtitle-align: right;
+        border-title-background: $accent;
+        border-title-color: $background;
+        border-subtitle-align: left;
         border-subtitle-background: $accent;
         border-subtitle-color: $background;
     }

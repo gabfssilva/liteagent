@@ -1,6 +1,8 @@
 """Chat view widget for displaying the full conversation in the chat interface."""
+from typing import Type
 
 from textual.containers import VerticalScroll
+from textual.widget import Widget
 
 from liteagent import Agent, AssistantMessage, ToolMessage
 from liteagent.codec import to_json_str
@@ -44,6 +46,14 @@ class ChatWidget(VerticalScroll):
         self.loop_id = loop_id
         self.bus = agent.bus
 
+    async def retrieve_or_mount[W: Widget](self, widget_id: str, widget_class: Type[W], **kwargs) -> W:
+        try:
+            return self.query_one(f"#{widget_id}", widget_class)
+        except Exception:
+            widget = widget_class(id=widget_id, **kwargs)
+            await self.mount(widget)
+            return widget
+
     def on_mount(self) -> None:
         @self.bus.on(AssistantMessagePartialEvent)
         async def handle_assistant_message_partial(event: AssistantMessagePartialEvent):
@@ -61,18 +71,14 @@ class ChatWidget(VerticalScroll):
 
             widget_id = f"assistant_{stream_id}"
 
-            try:
-                widget = self.query_one(f"#{widget_id}", AssistantMessageWidget)
-            except Exception:
-                widget = AssistantMessageWidget(
-                    id=widget_id,
-                    agent=event.agent,
-                    refresh_rate=self.refresh_rate,
-                    follow=self.follow,
-                    classes="assistant-message" if not self._parent_id else "assistant-message-inner",
-                )
-
-                await self.mount(widget)
+            widget = await self.retrieve_or_mount(
+                widget_id=widget_id,
+                widget_class=AssistantMessageWidget,
+                agent=event.agent,
+                refresh_rate=self.refresh_rate,
+                follow=self.follow,
+                classes="assistant-message" if not self._parent_id else "assistant-message-inner",
+            )
 
             widget.assistant_content = message.content.accumulated
             return True
@@ -92,20 +98,18 @@ class ChatWidget(VerticalScroll):
             stream_id = message.content.stream_id
             widget_id = f"assistant_{stream_id}"
 
-            try:
-                widget = self.query_one(f"#{widget_id}", AssistantMessageWidget)
-            except Exception:
-                widget = AssistantMessageWidget(
-                    id=widget_id,
-                    agent=event.agent,
-                    refresh_rate=self.refresh_rate,
-                    follow=self.follow,
-                    classes="assistant-message" if not self._parent_id else "assistant-message-inner",
-                )
-                await self.mount(widget)
-                widget.assistant_content = message.content.accumulated
-            
+            widget = await self.retrieve_or_mount(
+                widget_id=widget_id,
+                widget_class=AssistantMessageWidget,
+                agent=event.agent,
+                refresh_rate=self.refresh_rate,
+                follow=self.follow,
+                classes="assistant-message" if not self._parent_id else "assistant-message-inner",
+            )
+
+            widget.assistant_content = message.content.accumulated
             widget.finish()
+
             return True
 
         @self.bus.on(ToolRequestPartialEvent)
@@ -124,23 +128,23 @@ class ChatWidget(VerticalScroll):
             tool_id = event.tool_id
 
             tool_widget_id = f"{tool.name}_{tool_id}"
-            try:
-                widget = self.query_one(f"#{tool_widget_id}", ToolUseWidget)
-                widget.append_args(await to_json_str(chunk.accumulated_arguments, indent=2))
-            except Exception:
-                await self.mount(ToolUseWidget(
-                    tool_widget_id,
-                    tool,
-                    chunk.accumulated_arguments,
-                    classes="tool-message" if not self._parent_id else "tool-message-inner",
-                    refresh_rate=self.refresh_rate,
-                    follow=self.follow,
-                ))
+
+            widget = await self.retrieve_or_mount(
+                widget_id=tool_widget_id,
+                widget_class=ToolUseWidget,
+                tool=tool,
+                initial_args=await to_json_str(chunk.accumulated_arguments, indent=2),
+                classes="tool-message" if not self._parent_id else "tool-message-inner",
+                refresh_rate=self.refresh_rate,
+                follow=self.follow,
+            )
+
+            widget.append_args(await to_json_str(chunk.accumulated_arguments, indent=2))
 
             return True
 
         @self.bus.on(TeamDispatchPartialEvent)
-        async def handle_team_dispatch_start(event: TeamDispatchPartialEvent):
+        async def on_team_message(event: TeamDispatchPartialEvent):
             if self._parent_id and self._completed:
                 return False
 
@@ -151,30 +155,22 @@ class ChatWidget(VerticalScroll):
                 return True
 
             widget_id = f"{event.target_agent.name}_{event.tool_id}"
+            name = event.tool.name
+            arguments = event.accumulated_arguments
+            agent = event.target_agent
 
             try:
-                widget = self.query_one(f"#{widget_id}", InternalChatWidget)
-            except Exception:
-                name = event.tool.name
-                arguments = event.accumulated_arguments
-                agent = event.target_agent
+                widget = await self.retrieve_or_mount(
+                    widget_id=widget_id,
+                    widget_class=InternalChatWidget,
+                    name=name,
+                    prompt=arguments,
+                    agent=agent,
+                    loop_id=event.loop_id,
+                    refresh_rate=self.refresh_rate,
+                    classes="tool-message"
+                )
 
-                try:
-                    widget = InternalChatWidget(
-                        id=widget_id,
-                        name=name,
-                        prompt=arguments,
-                        agent=agent,
-                        loop_id=event.loop_id,
-                        refresh_rate=self.refresh_rate,
-                        classes="tool-message"
-                    )
-
-                    await self.mount(widget)
-                except Exception as e:
-                    return
-
-            try:
                 prompt = await to_json_str(event.accumulated_arguments)
                 prompt = f'```json\n{pretty_incomplete_json(prompt)}\n```'
                 widget.update_prompt(prompt)
@@ -195,30 +191,24 @@ class ChatWidget(VerticalScroll):
                 return True
 
             widget_id = f"{event.target_agent.name}_{event.tool_id}"
+            name = event.tool.name
+            agent = event.target_agent
+            prompt = f'```json\n{await to_json_str(event.arguments, indent=2)}\n```'
 
             try:
-                widget = self.query_one(f"#{widget_id}", InternalChatWidget)
+                widget = await self.retrieve_or_mount(
+                    widget_id=widget_id,
+                    widget_class=InternalChatWidget,
+                    name=name,
+                    prompt=prompt,
+                    agent=agent,
+                    loop_id=event.loop_id,
+                    refresh_rate=self.refresh_rate,
+                    classes="tool-message"
+                )
                 widget.args_completed()
             except Exception as e:
-                name = event.tool.name
-                agent = event.target_agent
-                prompt = f'```json\n{await to_json_str(event.arguments, indent=2)}\n```'
-
-                try:
-                    widget = InternalChatWidget(
-                        id=widget_id,
-                        name=name,
-                        prompt=prompt,
-                        agent=agent,
-                        loop_id=event.loop_id,
-                        refresh_rate=self.refresh_rate,
-                        classes="tool-message"
-                    )
-
-                    await self.mount(widget)
-                    widget.args_completed()
-                except Exception as e:
-                    self.notify(message=str(e), timeout=5, severity="error")
+                self.notify(message=str(e), timeout=5, severity="error")
 
             return False
 
@@ -234,27 +224,19 @@ class ChatWidget(VerticalScroll):
                 return True
 
             widget_id = f"{event.target_agent.name}_{event.tool_id}"
-            
+            prompt = f'```json\n{await to_json_str(event.arguments, indent=2)}\n```'
+
             try:
-                widget = self.query_one(f"#{widget_id}", InternalChatWidget)
-            except Exception:
-                try:
-                    prompt = f'```json\n{await to_json_str(event.arguments, indent=2)}\n```'
-                    widget = InternalChatWidget(
-                        id=widget_id,
-                        name=event.tool.name,
-                        prompt=prompt,
-                        agent=event.target_agent,
-                        loop_id=event.loop_id,
-                        refresh_rate=self.refresh_rate,
-                        classes="tool-message"
-                    )
-                    await self.mount(widget)
-                except Exception as e:
-                    self.notify(message=str(e), timeout=5, severity="error")
-                    return True
-            
-            try:
+                widget = await self.retrieve_or_mount(
+                    widget_id=widget_id,
+                    widget_class=InternalChatWidget,
+                    name=event.tool.name,
+                    prompt=prompt,
+                    agent=event.target_agent,
+                    loop_id=event.loop_id,
+                    refresh_rate=self.refresh_rate,
+                    classes="tool-message"
+                )
                 widget.complete(False)
             except Exception as e:
                 self.notify(message=str(e), timeout=5, severity="error")
@@ -274,22 +256,18 @@ class ChatWidget(VerticalScroll):
 
             tool = event.tool
             tool_id = event.tool_id
-
             tool_widget_id = f"{tool.name}_{tool_id}"
 
-            try:
-                widget = self.query_one(f"#{tool_widget_id}", ToolUseWidget)
-            except Exception:
-                widget = ToolUseWidget(
-                    id=tool_widget_id,
-                    tool=tool,
-                    initial_args=await to_json_str(event.arguments, indent=2),
-                    classes="tool-message" if not self._parent_id else "tool-message-inner",
-                    refresh_rate=self.refresh_rate,
-                    follow=self.follow,
-                )
-                await self.mount(widget)
-            
+            widget = await self.retrieve_or_mount(
+                widget_id=tool_widget_id,
+                widget_class=ToolUseWidget,
+                tool=tool,
+                initial_args=await to_json_str(event.arguments, indent=2),
+                classes="tool-message" if not self._parent_id else "tool-message-inner",
+                refresh_rate=self.refresh_rate,
+                follow=self.follow,
+            )
+
             widget.append_result(await to_json_str(event.result, indent=2))
             widget.complete(isinstance(event.result, ToolMessage.ExecutionError))
             self.scroll_end()

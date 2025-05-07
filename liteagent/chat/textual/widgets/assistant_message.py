@@ -12,7 +12,7 @@ from .reactive_markdown import ReactiveMarkdown
 class AssistantMessageWidget(BaseMessageWidget):
     """Widget that displays an assistant message with real-time updates."""
 
-    assistant_content = reactive("")
+    assistant_content = reactive("", init=False)
     finished = reactive(False)
 
     def __init__(
@@ -43,17 +43,12 @@ class AssistantMessageWidget(BaseMessageWidget):
         )
 
     def watch_assistant_content(self, assistant_content: str):
-        if not self.collapsed:
-            try:
-                self.query_one(ReactiveMarkdown).update(assistant_content)
-            except Exception as e:
-                pass
+        self.query_one(ReactiveMarkdown).update(assistant_content)
 
     def watch_finished(self, finished: bool):
         if finished:
             self.complete()
-            if not self.collapsed:
-                self.query_one(ReactiveMarkdown).finish()
+            self.query_one(ReactiveMarkdown).finish()
 
     def finish(self):
         self.finished = True
