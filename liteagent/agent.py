@@ -1,5 +1,6 @@
 import asyncio
 import itertools
+import json
 import uuid
 from inspect import Signature
 from typing import Callable, List, AsyncIterable, Type, Literal, overload, Optional
@@ -8,6 +9,7 @@ from pydantic import BaseModel
 
 from liteagent.provider import Provider
 from .message import Message, UserMessage, Image, AssistantMessage, ToolMessage, SystemMessage
+from .internal.atomic_string import AtomicString
 from .prompts import TOOL_AGENT_PROMPT
 from .tool import Tool, ToolDef
 from .bus import EventBus, create_bus
@@ -19,8 +21,7 @@ from .events import (
     TeamDispatchedEvent,
     ToolRequestCompleteEvent,
     ToolExecutionStartEvent,
-    AssistantMessagePartialEvent,
-    AssistantMessageCompleteEvent,
+    AssistantMessageEvent,
     TeamDispatchFinishedEvent,
     ToolExecutionCompleteEvent,
     ToolExecutionErrorEvent,
@@ -108,51 +109,54 @@ class Agent[Out]:
                     message=message,
                     loop_id=loop_id
                 ))
-            case AssistantMessage(content=AssistantMessage.ToolUseChunk() as chunk):
-                tool = self.tool_by_name(chunk.name)
+            case AssistantMessage(content=AssistantMessage.ToolUseStream() as tool_stream):
+                tool = self.tool_by_name(tool_stream.name)
 
                 from . import AgentDispatcherTool
 
                 if isinstance(tool, AgentDispatcherTool):
+                    args = await tool_stream.get_arguments()
+                    args_json = await tool_stream.get_arguments_as_json()
+
                     await self.bus.emit(TeamDispatchPartialEvent(
                         agent=self,
-                        tool=self.tool_by_name(chunk.name),
-                        tool_id=chunk.tool_use_id,
-                        accumulated_arguments=chunk.accumulated_arguments,
+                        tool=tool,
+                        tool_id=tool_stream.tool_use_id,
+                        accumulated_arguments=args_json,
                         target_agent=tool.agent,
                         message=message,
-                        loop_id=chunk.tool_use_id
+                        loop_id=tool_stream.tool_use_id
                     ))
                 else:
                     await self.bus.emit(ToolRequestPartialEvent(
                         agent=self,
-                        tool=self.tool_by_name(chunk.name),
-                        tool_id=chunk.tool_use_id,
-                        chunk=chunk,
+                        tool=tool,
+                        tool_id=tool_stream.tool_use_id,
                         message=message,
                         loop_id=loop_id
                     ))
-            case AssistantMessage(content=AssistantMessage.ToolUse() as tool_use):
-                tool = self.tool_by_name(tool_use.name)
+            case AssistantMessage(content=AssistantMessage.ToolUseStream() as tool_stream) if tool_stream.is_complete:
+                tool = self.tool_by_name(tool_stream.name)
+                args_json = await tool_stream.get_arguments_as_json()
 
                 from . import AgentDispatcherTool
 
                 if isinstance(tool, AgentDispatcherTool):
                     await self.bus.emit(TeamDispatchedEvent(
                         agent=self,
-                        tool_id=tool_use.tool_use_id,
+                        tool_id=tool_stream.tool_use_id,
                         tool=tool,
                         target_agent=tool.agent,
-                        arguments=tool_use.arguments,
+                        arguments=args_json,
                         message=message,
-                        loop_id=tool_use.tool_use_id
+                        loop_id=tool_stream.tool_use_id
                     ))
                 else:
                     await self.bus.emit(ToolRequestCompleteEvent(
                         agent=self,
-                        tool_id=tool_use.tool_use_id,
+                        tool_id=tool_stream.tool_use_id,
                         tool=tool,
-                        arguments=tool_use.arguments,
+                        arguments=args_json,
                         name=tool.name,
                         message=message,
                         loop_id=loop_id
@@ -161,24 +165,19 @@ class Agent[Out]:
                     await self.bus.emit(ToolExecutionStartEvent(
                         agent=self,
                         tool=tool,
-                        tool_id=tool_use.tool_use_id,
-                        arguments=tool_use.arguments,
+                        tool_id=tool_stream.tool_use_id,
+                        arguments=args_json,
                         message=message,
                         loop_id=loop_id
                     ))
-            case AssistantMessage() as message if not message.complete():
-                await self.bus.emit(AssistantMessagePartialEvent(
+
+            case AssistantMessage() as message:
+                await self.bus.emit(AssistantMessageEvent(
                     agent=self,
                     message=message,
                     loop_id=loop_id
                 ))
-            case AssistantMessage() as message if message.complete():
-                await self.bus.emit(AssistantMessageCompleteEvent(
-                    agent=self,
-                    message=message,
-                    loop_id=loop_id
-                ))
-            case ToolMessage():
+            case ToolMessage() as message:
                 tool_id = message.tool_use_id
                 tool_name = message.tool_name
                 arguments = message.arguments
@@ -378,8 +377,10 @@ class Agent[Out]:
                 accumulated.append(message)
 
             match message:
-                case AssistantMessage(content=AssistantMessage.ToolUse() as tool_use):
-                    pending_tools.append(self._run_tool(tool_use, loop_id))
+                # Removed ToolUse case since it's been replaced by ToolUseStream
+                case AssistantMessage(
+                    content=AssistantMessage.ToolUseStream() as tool_stream) if tool_stream.is_complete:
+                    pending_tools.append(self._run_tool(tool_stream, loop_id))
 
         if len(pending_tools) > 0:
             tool_responses = await asyncio.gather(*pending_tools)
@@ -392,13 +393,14 @@ class Agent[Out]:
             async for response in self._inner_call(all_messages, loop_id):
                 yield response
 
-    async def _run_tool(self, tool_request: AssistantMessage.ToolUse, loop_id: str) -> ToolMessage:
+    async def _run_tool(self, tool_request: AssistantMessage.ToolUseStream, loop_id: str) -> ToolMessage:
         chosen_tool = self.tool_by_name(tool_request.name)
 
         if not chosen_tool:
             raise Exception(f'tool with name {tool_request.name} not found')
 
-        args = dict() if len(chosen_tool.input.__pydantic_fields__) == 0 else tool_request.arguments
+        args_json = await tool_request.get_arguments_as_json()
+        args = dict() if len(chosen_tool.input.__pydantic_fields__) == 0 else args_json
 
         try:
             from . import AgentDispatcherTool
@@ -478,12 +480,16 @@ class Agent[Out]:
         for tool in eager_tools:
             tool_id = uuid.uuid4()
 
+            # Use ToolUseStream instead of ToolUse
+            tool_stream = AssistantMessage.ToolUseStream(
+                tool_use_id=f'{tool_id}',
+                name=tool.name,
+                arguments=AtomicString(json.dumps({}))
+            )
+            await tool_stream.complete()  # Mark it as complete immediately
+
             assistant_message = AssistantMessage(
-                content=AssistantMessage.ToolUse(
-                    tool_use_id=f'{tool_id}',
-                    name=tool.name,
-                    arguments={},
-                )
+                content=tool_stream
             )
 
             # Set loop_id on the assistant message

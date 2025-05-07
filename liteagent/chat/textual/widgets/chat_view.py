@@ -7,7 +7,7 @@ from textual.widget import Widget
 from liteagent import Agent, AssistantMessage, ToolMessage
 from liteagent.codec import to_json_str
 from liteagent.events import (
-    AssistantMessagePartialEvent,
+    AssistantMessageEvent,
     ToolRequestPartialEvent,
     TeamDispatchPartialEvent,
     TeamDispatchFinishedEvent,
@@ -55,8 +55,8 @@ class ChatWidget(VerticalScroll):
             return widget
 
     def on_mount(self) -> None:
-        @self.bus.on(AssistantMessagePartialEvent)
-        async def handle_assistant_message_partial(event: AssistantMessagePartialEvent):
+        @self.bus.on(AssistantMessageEvent)
+        async def handle_assistant_message_partial(event: AssistantMessageEvent):
             if self._parent_id and self._completed:
                 return False
 
@@ -67,8 +67,9 @@ class ChatWidget(VerticalScroll):
                 return True
 
             message: AssistantMessage = event.message
-            stream_id = message.content.stream_id
 
+            text_stream = message.content
+            stream_id = text_stream.stream_id
             widget_id = f"assistant_{stream_id}"
 
             widget = await self.retrieve_or_mount(
@@ -80,10 +81,19 @@ class ChatWidget(VerticalScroll):
                 classes="assistant-message" if not self._parent_id else "assistant-message-inner",
             )
 
-            widget.assistant_content = message.content.accumulated
+            widget.assistant_content = await text_stream.get()
+
+            async def process():
+                async for content in text_stream.content:
+                    widget.assistant_content = content
+
+                widget.complete()
+
+            self.run_worker(process())
+
             return True
 
-        @self.bus.on(AssistantMessageCompleteEvent)
+        # @self.bus.on(AssistantMessageCompleteEvent)
         async def handle_assistant_message(event: AssistantMessageCompleteEvent):
             if self._parent_id and self._completed:
                 return False
@@ -95,20 +105,29 @@ class ChatWidget(VerticalScroll):
                 return True
 
             message: AssistantMessage = event.message
-            stream_id = message.content.stream_id
-            widget_id = f"assistant_{stream_id}"
 
-            widget = await self.retrieve_or_mount(
-                widget_id=widget_id,
-                widget_class=AssistantMessageWidget,
-                agent=event.agent,
-                refresh_rate=self.refresh_rate,
-                follow=self.follow,
-                classes="assistant-message" if not self._parent_id else "assistant-message-inner",
-            )
+            # Handle different types of content
+            match message.content:
+                case AssistantMessage.TextStream() as text_stream:
+                    stream_id = text_stream.stream_id
+                    widget_id = f"assistant_{stream_id}"
 
-            widget.assistant_content = message.content.accumulated
-            widget.finish()
+                    widget = await self.retrieve_or_mount(
+                        widget_id=widget_id,
+                        widget_class=AssistantMessageWidget,
+                        agent=event.agent,
+                        refresh_rate=self.refresh_rate,
+                        follow=self.follow,
+                        classes="assistant-message" if not self._parent_id else "assistant-message-inner",
+                    )
+
+                    # Get completed content from the TextStream
+                    content = await text_stream.get()
+                    widget.assistant_content = content
+                    widget.finish()
+                case _:
+                    # Legacy or unknown content type
+                    self.notify("Unknown message content type", severity="warning")
 
             return True
 
@@ -123,23 +142,32 @@ class ChatWidget(VerticalScroll):
             if self.loop_id and self.loop_id != event.loop_id:
                 return True
 
-            chunk = event.chunk
+            message: AssistantMessage = event.message
             tool = event.tool
-            tool_id = event.tool_id
 
-            tool_widget_id = f"{tool.name}_{tool_id}"
+            match message.content:
+                case AssistantMessage.ToolUseStream() as tool_stream:
+                    tool_id = tool_stream.tool_use_id
+                    tool_widget_id = f"{tool.name}_{tool_id}"
 
-            widget = await self.retrieve_or_mount(
-                widget_id=tool_widget_id,
-                widget_class=ToolUseWidget,
-                tool=tool,
-                initial_args=await to_json_str(chunk.accumulated_arguments, indent=2),
-                classes="tool-message" if not self._parent_id else "tool-message-inner",
-                refresh_rate=self.refresh_rate,
-                follow=self.follow,
-            )
+                    # Get current arguments
+                    args_str = await tool_stream.get_arguments()
+                    args_display = await to_json_str(await tool_stream.get_arguments_as_json(), indent=2)
 
-            widget.append_args(await to_json_str(chunk.accumulated_arguments, indent=2))
+                    widget = await self.retrieve_or_mount(
+                        widget_id=tool_widget_id,
+                        widget_class=ToolUseWidget,
+                        tool=tool,
+                        initial_args=args_display,
+                        classes="tool-message" if not self._parent_id else "tool-message-inner",
+                        refresh_rate=self.refresh_rate,
+                        follow=self.follow,
+                    )
+
+                    widget.append_args(args_display)
+                case _:
+                    # Legacy or unknown content type
+                    self.notify("Unknown tool message content type", severity="warning")
 
             return True
 
@@ -254,22 +282,33 @@ class ChatWidget(VerticalScroll):
             if self.loop_id and self.loop_id != event.loop_id:
                 return True
 
+            message: AssistantMessage = event.message
             tool = event.tool
-            tool_id = event.tool_id
-            tool_widget_id = f"{tool.name}_{tool_id}"
 
-            widget = await self.retrieve_or_mount(
-                widget_id=tool_widget_id,
-                widget_class=ToolUseWidget,
-                tool=tool,
-                initial_args=await to_json_str(event.arguments, indent=2),
-                classes="tool-message" if not self._parent_id else "tool-message-inner",
-                refresh_rate=self.refresh_rate,
-                follow=self.follow,
-            )
+            match message.content:
+                case AssistantMessage.ToolUseStream() as tool_stream:
+                    tool_id = tool_stream.tool_use_id
+                    tool_widget_id = f"{tool.name}_{tool_id}"
 
-            widget.append_result(await to_json_str(event.result, indent=2))
-            widget.complete(isinstance(event.result, ToolMessage.ExecutionError))
+                    # Get completed arguments
+                    args_display = await to_json_str(await tool_stream.get_arguments_as_json(), indent=2)
+
+                    widget = await self.retrieve_or_mount(
+                        widget_id=tool_widget_id,
+                        widget_class=ToolUseWidget,
+                        tool=tool,
+                        initial_args=args_display,
+                        classes="tool-message" if not self._parent_id else "tool-message-inner",
+                        refresh_rate=self.refresh_rate,
+                        follow=self.follow,
+                    )
+
+                    result_display = await to_json_str(event.result, indent=2)
+                    widget.append_result(result_display)
+                    widget.complete(isinstance(event.result, ToolMessage.ExecutionError))
+                case _:
+                    # Legacy or unknown content type
+                    self.notify("Unknown tool message content type", severity="warning")
             self.scroll_end()
 
     def mark_completed(self):

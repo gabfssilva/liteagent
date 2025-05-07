@@ -69,7 +69,7 @@ class UserMessageEvent(MessageEvent):
 
 
 @dataclass(eq=False, kw_only=True)
-class AssistantMessagePartialEvent(MessageEvent):
+class AssistantMessageEvent(MessageEvent):
     message: AssistantMessage
 
 
@@ -86,7 +86,8 @@ class ToolEvent(MessageEvent):
 
 @dataclass(eq=False, kw_only=True)
 class ToolRequestPartialEvent(ToolEvent):
-    chunk: AssistantMessage.ToolUseChunk
+    # Updated to support the new TextStream and ToolUseStream classes
+    message: AssistantMessage
 
 
 @dataclass(eq=False, kw_only=True)
@@ -108,6 +109,7 @@ class ToolExecutionStartEvent(ToolExecutionEvent):
 @dataclass(eq=False, kw_only=True)
 class ToolExecutionCompleteEvent(ToolExecutionEvent):
     result: JsonLike
+    message: AssistantMessage
 
 
 @dataclass(eq=False, kw_only=True)

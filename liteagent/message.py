@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import uuid
 from dataclasses import dataclass, field
 from typing import Literal
@@ -8,6 +9,7 @@ from typing import Literal
 import aiofiles
 
 from liteagent.codec import JsonValue, to_json, JsonLike, JsonObject, JsonNull
+from liteagent.internal.atomic_string import AtomicString
 
 
 @dataclass
@@ -103,44 +105,79 @@ class ToolMessage(Message):
 @dataclass(kw_only=True, eq=True, frozen=True)
 class AssistantMessage(Message):
     role: Literal['assistant'] = field(init=False, default="assistant")
-    content: TextComplete | JsonLike | ToolUse | TextChunk | ToolUseChunk
+    content: TextStream | ToolUseStream
 
-    @dataclass(kw_only=True, eq=True, frozen=True)
-    class TextComplete:
+    @dataclass(kw_only=True, eq=True)
+    class TextStream:
         stream_id: str
-        accumulated: str
+        content: AtomicString
+
+        def __post_init__(self):
+            if not isinstance(self.content, AtomicString):
+                self.content = AtomicString(str(self.content))
+
+        async def append(self, text: str):
+            await self.content.append(text)
+
+        async def get(self) -> str:
+            return await self.content.get()
+
+        async def await_complete(self) -> str:
+            return await self.content.await_complete()
+
+        async def await_as_json(self) -> JsonObject:
+            return self.content.await_as_json()
+
+        async def complete(self):
+            await self.content.complete()
+
+        @property
+        def is_complete(self) -> bool:
+            return self.content.is_complete
 
         async def __json__(self) -> JsonValue:
-            return self.accumulated
+            return await self.content.await_complete()
 
-    @dataclass(kw_only=True, eq=True, frozen=True)
-    class TextChunk:
-        stream_id: str
-        value: str
-        accumulated: str = field(default="")
-
-    @dataclass(kw_only=True, eq=True, frozen=True)
-    class ToolUseChunk:
+    @dataclass(kw_only=True, eq=True)
+    class ToolUseStream:
         tool_use_id: str
         name: str
-        accumulated_arguments: JsonObject | str | JsonNull
+        arguments: AtomicString
 
-    @dataclass(kw_only=True, eq=True, frozen=True)
-    class ToolUse:
-        tool_use_id: str
-        name: str
-        arguments: JsonObject | JsonNull
+        def __post_init__(self):
+            if not isinstance(self.arguments, AtomicString):
+                self.arguments = AtomicString(
+                    json.dumps(self.arguments) if not isinstance(self.arguments, str) else self.arguments)
+
+        async def append_arguments(self, arg_text: str):
+            await self.arguments.append(arg_text)
+
+        async def get_arguments(self) -> str:
+            return await self.arguments.get()
+
+        async def await_complete_arguments(self) -> str:
+            return await self.arguments.await_complete()
+
+        async def get_arguments_as_json(self) -> JsonObject:
+            return await self.arguments.await_as_json()
+
+        async def complete(self):
+            await self.arguments.complete()
+
+        @property
+        def is_complete(self) -> bool:
+            return self.arguments.is_complete
 
         async def __json__(self) -> JsonValue:
             return {
                 "tool_use_id": self.tool_use_id,
                 "name": self.name,
-                "arguments": self.arguments
+                "arguments": await self.get_arguments_as_json()
             }
 
     def complete(self) -> bool:
         match self.content:
-            case AssistantMessage.TextChunk() | AssistantMessage.ToolUseChunk():
-                return False
+            case AssistantMessage.TextStream() | AssistantMessage.ToolUseStream():
+                return True
             case _:
                 return True

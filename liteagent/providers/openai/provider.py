@@ -13,6 +13,7 @@ from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
 from liteagent import Tool, Provider
 from liteagent.codec import to_json_str
 from liteagent.message import Message, SystemMessage, UserMessage, ImageURL, ImagePath, ToolMessage, AssistantMessage
+from liteagent.internal.atomic_string import AtomicString
 
 
 class OpenAICompatible(Provider):
@@ -52,12 +53,12 @@ class OpenAICompatible(Provider):
             **self.args
         ) as stream:
             async for event in stream:
-                message = self._from_oai(event, cache)
+                message = await self._from_oai(event, cache)
                 if message:
                     yield message
 
     @staticmethod
-    def _from_oai(event: ChatCompletionStreamEvent, cache: dict) -> Message | None:
+    async def _from_oai(event: ChatCompletionStreamEvent, cache: dict) -> Message | None:
         match event:
             case ChunkEvent(
                 chunk=ChatCompletionChunk(
@@ -66,32 +67,27 @@ class OpenAICompatible(Provider):
                     ]
                 )
             ) if content != "":
-                acc = cache.get("last_assistant_message", None)
+                text_stream = cache.get("text_stream", None)
 
-                if not acc:
-                    acc = {
-                        "accumulated": "",
-                        "stream_id": f'{uuid.uuid4()}'
-                    }
-
-                    cache["last_assistant_message"] = acc
-
-                acc['accumulated'] = acc['accumulated'] + content
-
-                return AssistantMessage(content=AssistantMessage.TextChunk(
-                    value=content,
-                    accumulated=acc['accumulated'],
-                    stream_id=acc['stream_id']
-                ))
+                if not text_stream:
+                    text_stream = AssistantMessage.TextStream(
+                        stream_id=f'{uuid.uuid4()}',
+                        content=AtomicString()
+                    )
+                    cache["text_stream"] = text_stream
+                    await text_stream.append(content)
+                    return AssistantMessage(content=text_stream)
+                else:
+                    await text_stream.append(content)
+                    return None
 
             case ContentDoneEvent(content=content, parsed=parsed):
-                acc = cache.pop("last_assistant_message", None)
-                stream_id = acc['stream_id'] if acc else f'{uuid.uuid4()}'
+                text_stream: AssistantMessage.TextStream | None = cache.pop("text_stream", None)
 
-                return AssistantMessage(content=parsed if parsed is not None else AssistantMessage.TextComplete(
-                    accumulated=content,
-                    stream_id=stream_id
-                ))
+                if text_stream:
+                    await text_stream.complete()
+
+                return None
 
             case FunctionToolCallArgumentsDeltaEvent(
                 name=name,
@@ -99,19 +95,24 @@ class OpenAICompatible(Provider):
                 arguments=arguments,
                 parsed_arguments=parsed,
             ):
-                cache.pop("last_assistant_message", None)
+                cache.pop("text_stream", None)
+                tool_stream = cache.get(f"tool_stream-{name}-{index}", None)
 
-                id = cache.get(f"{name}-{index}", None)
-
-                if not id:
-                    id = f'{uuid.uuid4()}'
-                    cache[f"{name}-{index}"] = id
-
-                return AssistantMessage(content=AssistantMessage.ToolUseChunk(
-                    tool_use_id=id,
-                    name=name,
-                    accumulated_arguments=arguments if not parsed or len(parsed) == 0 else parsed,
-                ))
+                if not tool_stream:
+                    tool_stream = AssistantMessage.ToolUseStream(
+                        tool_use_id=f'{uuid.uuid4()}',
+                        name=name,
+                        arguments=AtomicString()
+                    )
+                    cache[f"tool_stream-{name}-{index}"] = tool_stream
+                    
+                    args_text = arguments if not parsed or len(parsed) == 0 else await to_json_str(parsed)
+                    await tool_stream.append_arguments(args_text)
+                    return AssistantMessage(content=tool_stream)
+                else:
+                    args_text = arguments if not parsed or len(parsed) == 0 else await to_json_str(parsed)
+                    await tool_stream.append_arguments(args_text)
+                    return None
 
             case FunctionToolCallArgumentsDoneEvent(
                 name=name,
@@ -119,19 +120,24 @@ class OpenAICompatible(Provider):
                 arguments=arguments,
                 parsed_arguments=parsed
             ):
-                cache.pop("last_assistant_message", None)
+                cache.pop("text_stream", None)
 
-                id = cache.get(f"{name}-{index}", None)
+                tool_stream: AssistantMessage.ToolUseStream | None = cache.get(f"tool_stream-{name}-{index}", None)
 
-                if not id:
-                    id = f'{uuid.uuid4()}'
-                    cache[f"{name}-{index}"] = id
+                if tool_stream:
+                    await tool_stream.complete()
+                    return None
+                else:
+                    args_value = parsed or arguments
+                    args_str = args_value if isinstance(args_value, str) else await to_json_str(args_value)
 
-                return AssistantMessage(content=AssistantMessage.ToolUse(
-                    tool_use_id=id,
-                    name=name,
-                    arguments=parsed or arguments
-                ))
+                    stream = AssistantMessage.ToolUseStream(
+                        tool_use_id=f'{uuid.uuid4()}',
+                        name=name,
+                        arguments=AtomicString(args_str)
+                    )
+                    await stream.complete()
+                    return AssistantMessage(content=stream)
 
             case _:
                 return None
@@ -197,26 +203,25 @@ class OpenAICompatible(Provider):
                     content=await to_json_str(message.content),
                 )
 
-            case AssistantMessage(
-                content=AssistantMessage.ToolUse(tool_use_id=tool_use_id, name=name, arguments=arguments)):
+            case AssistantMessage(content=AssistantMessage.ToolUseStream() as tool_stream):
                 return ChatCompletionAssistantMessageParam(
                     role='assistant',
                     tool_calls=[
                         ChatCompletionMessageToolCallParam(
-                            id=tool_use_id,
+                            id=tool_stream.tool_use_id,
                             type='function',
                             function={
-                                "name": name,
-                                "arguments": await to_json_str(arguments)
+                                "name": tool_stream.name,
+                                "arguments": await tool_stream.await_complete_arguments()
                             }
                         )
                     ]
                 )
 
-            case AssistantMessage(content=AssistantMessage.TextComplete(accumulated=content)):
+            case AssistantMessage(content=AssistantMessage.TextStream() as text_stream):
                 return ChatCompletionAssistantMessageParam(
                     role='assistant',
-                    content=content
+                    content=await text_stream.await_complete()
                 )
 
             case _:
@@ -228,7 +233,7 @@ class OpenAICompatible(Provider):
         pending_tool_calls = {}
 
         for i, msg in enumerate(messages):
-            if isinstance(msg, AssistantMessage) and isinstance(msg.content, AssistantMessage.ToolUse):
+            if isinstance(msg, AssistantMessage) and isinstance(msg.content, AssistantMessage.ToolUseStream):
                 pending_tool_calls[msg.content.tool_use_id] = msg
                 continue
 
