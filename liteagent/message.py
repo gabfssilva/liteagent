@@ -138,11 +138,16 @@ class AssistantMessage(Message):
         async def __json__(self) -> JsonValue:
             return await self.content.await_complete()
 
+
     @dataclass(kw_only=True, eq=True)
     class ToolUseStream:
         tool_use_id: str
         name: str
         arguments: AtomicString
+
+        from liteagent import Tool
+
+        tool: 'Tool' = field(init=False)
 
         def __post_init__(self):
             if not isinstance(self.arguments, AtomicString):

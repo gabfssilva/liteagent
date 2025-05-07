@@ -6,11 +6,14 @@ from liteagent.codec import JsonValue
 
 
 class AtomicString:
-    def __init__(self, initial: str = ""):
+    def __init__(self, initial: str = "", complete: bool = False):
         self._value = initial
         self._lock = asyncio.Lock()
         self._complete_event = asyncio.Event()
         self._subscribers = []
+
+        if complete:
+            self._complete_event.set()
 
     async def append(self, text: str):
         async with self._lock:
@@ -18,6 +21,16 @@ class AtomicString:
                 raise RuntimeError("Cannot mutate a complete AtomicString")
 
             self._value += text
+
+            for semaphore in self._subscribers:
+                semaphore.set()
+
+    async def set(self, text: str):
+        async with self._lock:
+            if self.is_complete:
+                raise RuntimeError("Cannot mutate a complete AtomicString")
+
+            self._value = text
 
             for semaphore in self._subscribers:
                 semaphore.set()

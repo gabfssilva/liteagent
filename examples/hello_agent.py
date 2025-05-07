@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from liteagent import agent, tool
 from liteagent.providers import openai
+from liteagent.tools import browser
 
 
 class Person(BaseModel):
@@ -31,7 +32,7 @@ def personal_info() -> Person:
 
 @agent(
     provider=openai(),
-    tools=[personal_info],
+    tools=[personal_info, browser],
 )
 async def hello_agent() -> str: ...
 

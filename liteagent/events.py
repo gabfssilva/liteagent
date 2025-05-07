@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, TYPE_CHECKING
+from typing import List, TYPE_CHECKING
 import time
 
 from overrides import overrides
@@ -12,9 +12,7 @@ if TYPE_CHECKING:
     from liteagent.agent import Agent
     from liteagent.tool import Tool
 
-from liteagent.message import Message, AssistantMessage, SystemMessage
-from liteagent.codec import JsonLike, JsonObject, JsonNull
-
+from liteagent.message import Message, AssistantMessage, SystemMessage, ToolMessage
 
 @dataclass(eq=False, kw_only=True)
 class Event:
@@ -62,86 +60,22 @@ class MessageEvent(Event):
 class SystemMessageEvent(MessageEvent):
     message: SystemMessage
 
-
 @dataclass(eq=False, kw_only=True)
 class UserMessageEvent(MessageEvent):
     message: UserMessage
-
 
 @dataclass(eq=False, kw_only=True)
 class AssistantMessageEvent(MessageEvent):
     message: AssistantMessage
 
+    def is_tool_use(self) -> bool:
+        return isinstance(self.message.content, AssistantMessage.ToolUseStream)
+
+    def is_text(self) -> bool:
+        return isinstance(self.message.content, AssistantMessage.TextStream)
 
 @dataclass(eq=False, kw_only=True)
-class AssistantMessageCompleteEvent(MessageEvent):
-    message: AssistantMessage
-
-
-@dataclass(eq=False, kw_only=True)
-class ToolEvent(MessageEvent):
+class ToolMessageEvent(MessageEvent):
+    message: ToolMessage
     tool: 'Tool'
-    tool_id: str
-
-
-@dataclass(eq=False, kw_only=True)
-class ToolRequestPartialEvent(ToolEvent):
-    # Updated to support the new TextStream and ToolUseStream classes
-    message: AssistantMessage
-
-
-@dataclass(eq=False, kw_only=True)
-class ToolRequestCompleteEvent(ToolEvent):
-    name: str
-    arguments: JsonObject | JsonNull
-
-
-@dataclass(eq=False, kw_only=True)
-class ToolExecutionEvent(ToolEvent):
-    arguments: Dict[str, Any]
-
-
-@dataclass(eq=False, kw_only=True)
-class ToolExecutionStartEvent(ToolExecutionEvent):
-    pass
-
-
-@dataclass(eq=False, kw_only=True)
-class ToolExecutionCompleteEvent(ToolExecutionEvent):
-    result: JsonLike
-    message: AssistantMessage
-
-
-@dataclass(eq=False, kw_only=True)
-class ToolExecutionErrorEvent(ToolExecutionEvent):
-    error: Exception
-
-
-@dataclass(eq=False, kw_only=True)
-class TeamEvent(ToolEvent):
-    target_agent: 'Agent'
-
-
-@dataclass(eq=False, kw_only=True)
-class TeamDispatchPartialEvent(TeamEvent):
-    accumulated_arguments: JsonObject | str | JsonNull
-
-
-@dataclass(eq=False, kw_only=True)
-class TeamDispatchedEvent(TeamEvent):
-    arguments: JsonObject
-
-
-@dataclass(eq=False, kw_only=True)
-class TeamDispatchFinishedEvent(TeamEvent):
-    arguments: JsonObject
-    messages: List[Message]
-
-
-@dataclass(eq=False, kw_only=True)
-class SessionResetEvent(Event):
-    previous_conversation_size: int
-
-    @property
-    def id(self) -> str:
-        return f"session_reset_{self.timestamp}"
+    tool_use_id: str

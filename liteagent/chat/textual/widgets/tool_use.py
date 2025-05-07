@@ -74,14 +74,19 @@ class ToolUseWidget(BaseMessageWidget):
     def watch_result(self, result: str):
         self.query_one(f"#{self.id}_result", ReactiveMarkdown).update(result)
 
+    def watch_finished_arguments(self, finished_arguments):
+        if finished_arguments:
+            self.query_one(f"#{self.id}_args", ReactiveMarkdown).finish()
+
+    def watch_finished_result(self, finished_result):
+        if finished_result:
+            self.query_one(f"#{self.id}_result", ReactiveMarkdown).finish()
+
     def watch_state(self, state: str) -> None:
         super().watch_state(state)
         if state in ["completed", "failed"]:
             self.finished_arguments = True
             self.finished_result = True
-
-            self.query_one(f"#{self.id}_result", ReactiveMarkdown).finish()
-            self.query_one(f"#{self.id}_args", ReactiveMarkdown).finish()
 
     def append_args(self, accumulated: str) -> None:
         self.arguments = '```json\n' + accumulated + '\n```'

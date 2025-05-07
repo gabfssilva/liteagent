@@ -2,13 +2,13 @@ import asyncio
 from asyncio import sleep
 
 from liteagent import agent, bus
-from liteagent.events import AssistantMessageCompleteEvent, MessageEvent
+from liteagent.events import MessageEvent, AssistantMessageEvent
 from liteagent.providers import deepseek
 from liteagent.tools import brasil_api
 
 
-@bus.on(MessageEvent)
-async def on_message(event: AssistantMessageCompleteEvent):
+@bus.on(AssistantMessageEvent)
+async def on_message(event: AssistantMessageEvent):
     print(f"{event.event_type} ({event.id}): {event.message.content}")
 
 

@@ -1,7 +1,7 @@
 import asyncio
 
 from liteagent import agent, bus
-from liteagent.events import ToolExecutionCompleteEvent
+from liteagent.events import ToolMessageEvent
 from liteagent.providers import openai
 from liteagent.tools import wikipedia, python_runner
 
@@ -47,8 +47,8 @@ def searcher() -> str:
     """
 
 
-@bus.on(ToolExecutionCompleteEvent)
-async def on_message(msg: ToolExecutionCompleteEvent):
+@bus.on(ToolMessageEvent)
+async def on_message(msg: ToolMessageEvent):
     print(msg)
 
 

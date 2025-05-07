@@ -45,17 +45,22 @@ class OpenAICompatible(Provider):
 
         cache: dict = {}
 
-        async with self.client.beta.chat.completions.stream(
-            model=self.model,
-            messages=oai_messages,
-            tools=tool_definitions,
-            response_format=respond_as or NOT_GIVEN,
-            **self.args
-        ) as stream:
-            async for event in stream:
-                message = await self._from_oai(event, cache)
-                if message:
-                    yield message
+        try:
+            async with self.client.beta.chat.completions.stream(
+                model=self.model,
+                messages=oai_messages,
+                tools=tool_definitions,
+                response_format=respond_as or NOT_GIVEN,
+                **self.args
+            ) as stream:
+                async for event in stream:
+                    message = await self._from_oai(event, cache)
+                    if message:
+                        yield message
+        finally:
+            for key, value in list(cache.items()):
+                if isinstance(value, AtomicString) and not value.is_complete:
+                    await value.complete()
 
     @staticmethod
     async def _from_oai(event: ChatCompletionStreamEvent, cache: dict) -> Message | None:
@@ -67,25 +72,24 @@ class OpenAICompatible(Provider):
                     ]
                 )
             ) if content != "":
-                text_stream = cache.get("text_stream", None)
+                content_stream: AtomicString | None = cache.get("assistant_stream", None)
 
-                if not text_stream:
-                    text_stream = AssistantMessage.TextStream(
+                if not content_stream:
+                    content_stream = AtomicString(content)
+                    cache["assistant_stream"] = content_stream
+
+                    return AssistantMessage(content=AssistantMessage.TextStream(
                         stream_id=f'{uuid.uuid4()}',
-                        content=AtomicString()
-                    )
-                    cache["text_stream"] = text_stream
-                    await text_stream.append(content)
-                    return AssistantMessage(content=text_stream)
+                        content=content_stream
+                    ))
                 else:
-                    await text_stream.append(content)
+                    await content_stream.append(content)
                     return None
 
-            case ContentDoneEvent(content=content, parsed=parsed):
-                text_stream: AssistantMessage.TextStream | None = cache.pop("text_stream", None)
-
-                if text_stream:
-                    await text_stream.complete()
+            case ContentDoneEvent():
+                for key in list(cache.keys()):
+                    tool_stream = cache.pop(key)
+                    await tool_stream.complete()
 
                 return None
 
@@ -93,51 +97,51 @@ class OpenAICompatible(Provider):
                 name=name,
                 index=index,
                 arguments=arguments,
-                parsed_arguments=parsed,
             ):
-                cache.pop("text_stream", None)
-                tool_stream = cache.get(f"tool_stream-{name}-{index}", None)
+                content_stream: AtomicString | None = cache.pop("assistant_stream", None)
+
+                if content_stream:
+                    await content_stream.complete()
+
+                tool_stream: AtomicString | None = cache.get(f"tool_stream-{name}-{index}", None)
 
                 if not tool_stream:
-                    tool_stream = AssistantMessage.ToolUseStream(
+                    tool_stream = AtomicString(arguments)
+
+                    cache[f"tool_stream-{name}-{index}"] = tool_stream
+
+                    return AssistantMessage(content=AssistantMessage.ToolUseStream(
                         tool_use_id=f'{uuid.uuid4()}',
                         name=name,
-                        arguments=AtomicString()
-                    )
-                    cache[f"tool_stream-{name}-{index}"] = tool_stream
-                    
-                    args_text = arguments if not parsed or len(parsed) == 0 else await to_json_str(parsed)
-                    await tool_stream.append_arguments(args_text)
-                    return AssistantMessage(content=tool_stream)
+                        arguments=tool_stream
+                    ))
                 else:
-                    args_text = arguments if not parsed or len(parsed) == 0 else await to_json_str(parsed)
-                    await tool_stream.append_arguments(args_text)
+                    await tool_stream.set(arguments)
                     return None
 
             case FunctionToolCallArgumentsDoneEvent(
                 name=name,
                 index=index,
                 arguments=arguments,
-                parsed_arguments=parsed
             ):
-                cache.pop("text_stream", None)
+                content_stream: AtomicString | None = cache.pop("assistant_stream", None)
 
-                tool_stream: AssistantMessage.ToolUseStream | None = cache.get(f"tool_stream-{name}-{index}", None)
+                if content_stream:
+                    await content_stream.complete()
+
+                tool_stream: AtomicString | None = cache.pop(f"tool_stream-{name}-{index}", None)
 
                 if tool_stream:
+                    await tool_stream.set(arguments)
                     await tool_stream.complete()
                     return None
                 else:
-                    args_value = parsed or arguments
-                    args_str = args_value if isinstance(args_value, str) else await to_json_str(args_value)
-
-                    stream = AssistantMessage.ToolUseStream(
+                    atomic_string = AtomicString(arguments, True)
+                    return AssistantMessage(content=AssistantMessage.ToolUseStream(
                         tool_use_id=f'{uuid.uuid4()}',
                         name=name,
-                        arguments=AtomicString(args_str)
-                    )
-                    await stream.complete()
-                    return AssistantMessage(content=stream)
+                        arguments=atomic_string
+                    ))
 
             case _:
                 return None

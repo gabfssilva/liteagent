@@ -153,6 +153,7 @@ class Tool(ToolDef):
 
     @property
     def type(self) -> Literal['agent', 'tool']:
+        """Indicates whether this is a regular tool or an agent tool"""
         return 'tool'
 
     async def __call__(self, **kwargs) -> JsonLike:
@@ -278,8 +279,10 @@ class AgentDispatcherTool(Tool):
         self.input = self._create_input_model()
         self.handler = self._dispatch
 
+    @property
     @override
     def type(self) -> Literal['agent', 'tool']:
+        """Indicates that this is an agent tool"""
         return 'agent'
 
     async def _dispatch(self, *args, **kwargs):
