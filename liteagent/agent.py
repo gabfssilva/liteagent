@@ -368,7 +368,6 @@ class Agent[Out]:
         accumulated = []
 
         async for message in response:
-            # Set loop_id on the message
             object.__setattr__(message, 'loop_id', loop_id)
 
             await self._emit_event(message)
@@ -386,7 +385,6 @@ class Agent[Out]:
             tool_responses = await asyncio.gather(*pending_tools)
 
             for tool_response in tool_responses:
-                await self._emit_event(tool_response)
                 yield tool_response
 
             all_messages = messages + accumulated + tool_responses
@@ -413,13 +411,17 @@ class Agent[Out]:
             else:
                 tool_result = await chosen_tool(**args)
 
-            return ToolMessage(
+            message = ToolMessage(
                 tool_use_id=tool_request.tool_use_id,
                 tool_name=tool_request.name,
                 arguments=args,
                 content=tool_result,
                 loop_id=loop_id,
             )
+
+            await self._emit_event(message)
+
+            return message
         except Exception as e:
             tool_execution_error = ToolExecutionErrorEvent(
                 agent=self,
@@ -428,7 +430,7 @@ class Agent[Out]:
                 arguments=args,
                 error=e,
                 loop_id=loop_id,
-                message=None
+                message=AssistantMessage(content=tool_request)
             )
 
             await self.bus.emit(tool_execution_error)
