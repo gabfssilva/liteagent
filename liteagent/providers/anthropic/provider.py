@@ -1,13 +1,14 @@
 import json
 import uuid
-from typing import AsyncIterable, Type
+from typing import AsyncIterable, Type, List
 
 from anthropic import AsyncAnthropic
 from anthropic._types import NOT_GIVEN
-from pydantic import BaseModel
+from anthropic.types import MessageParam, TextBlockParam, ImageBlockParam, ToolResultBlockParam, ToolUseBlockParam, \
+    URLImageSourceParam, Base64ImageSourceParam
 
 from liteagent import Tool, ImagePath
-from liteagent.codec import to_json_str
+from liteagent.codec import to_json_str, to_json
 from liteagent.internal import register_provider
 from liteagent.message import ToolMessage, Message, UserMessage, AssistantMessage, SystemMessage, ImageURL
 from liteagent.provider import Provider
@@ -27,57 +28,6 @@ class Anthropic(Provider):
         self.model = model
         self.args = kwargs
 
-    async def _map_content(self, content):
-        if isinstance(content, str):
-            return [{"type": "text", "text": content}]
-        if isinstance(content, ImageURL):
-            return [{"type": "image", "source": {"type": "url", "url": content.url}}]
-        if isinstance(content, ImagePath):
-            return [{"type": "image", "source": {
-                "type": "base64",
-                "media_type": f"image/{content.image_type()}",
-                "data": await content.as_base64()
-            }}]
-        if isinstance(content, list):
-            out = []
-            for item in content:
-                out.extend(await self._map_content(item))
-            return out
-        raise ValueError(f"Invalid content type: {type(content)}")
-
-    async def _to_anthropic(self, message: Message) -> dict:
-        match message:
-            case UserMessage(content=content):
-                return {
-                    "role": "user",
-                    "content": await self._map_content(content)
-                }
-            case AssistantMessage(
-                content=AssistantMessage.ToolUse(tool_use_id=id, name=name, arguments=BaseModel() as args)):
-                return {"role": "assistant",
-                        "content": [{"type": "tool_use", "id": id, "name": name, "input": args.model_dump()}]}
-            case AssistantMessage(
-                content=AssistantMessage.ToolUse(tool_use_id=id, name=name, arguments=dict() as args)):
-                return {"role": "assistant", "content": [{"type": "tool_use", "id": id, "name": name, "input": args}]}
-            case AssistantMessage(content=AssistantMessage.ToolUse(tool_use_id=id, name=name, arguments=str(args))):
-                try:
-                    parsed = json.loads(args)
-                except:
-                    parsed = args
-                return {"role": "assistant", "content": [{"type": "tool_use", "id": id, "name": name, "input": parsed}]}
-            case AssistantMessage() as message if message.complete():
-                return {"role": "assistant", "content": [{"type": "text", "text": await to_json_str(message.content)}]}
-            case ToolMessage(tool_use_id=id) as message:
-                content = await to_json_str(message.content) if not isinstance(message.content,
-                                                                               str) else message.content
-                return {"role": "user", "content": [{"type": "tool_result", "tool_use_id": id, "content": content}]}
-            case SystemMessage(content=content):
-                return {"role": "system", "content": str(content)}
-            case Message(role=role, content=content):
-                return {"role": role, "content": [{"type": "text", "text": str(content)}]}
-            case _:
-                raise ValueError(f"Unknown message type: {message}")
-
     async def completion(self, messages: list[Message], tools: list[Tool], respond_as: Type) -> AsyncIterable[Message]:
         tool_definitions = [
             {"name": t["function"]["name"], "description": t["function"]["description"],
@@ -86,10 +36,10 @@ class Anthropic(Provider):
         ] if tools else NOT_GIVEN
 
         parsed_messages = [await self._to_anthropic(m) for m in messages]
+        parsed_messages = filter(lambda m: m is not None, parsed_messages)
         system_msg = next((m for m in messages if isinstance(m, SystemMessage)), None)
         system_content = system_msg.content if system_msg else NOT_GIVEN
 
-        parsed_messages = [m for m in parsed_messages if m["role"] != "system"]
         cache = {}
 
         async with self.client.messages.stream(
@@ -106,59 +56,132 @@ class Anthropic(Provider):
     def _from_anthropic(self, event, cache: dict) -> list[Message]:
         messages = []
 
-        if event.type == "text":
-            acc = cache.setdefault("last_assistant_message", {"accumulated": "", "stream_id": f"{uuid.uuid4()}"})
-            acc['accumulated'] += event.text
-            messages.append(AssistantMessage(content=AssistantMessage.TextChunk(
-                value=event.text,
-                accumulated=acc['accumulated'],
-                stream_id=acc['stream_id']
-            )))
+        if event.type == "message_start":
+            cache["current_message"] = {
+                "stream_id": str(uuid.uuid4())
+            }
 
-        elif event.type == "content_block_delta" and event.delta.type == "tool_use":
-            key = f"tool-{event.delta.id}"
-            acc = cache.get(key, {"name": event.delta.name, "accumulated": {}})
-            acc["accumulated"] = merge_json(acc.get("accumulated", {}), event.delta.input or {})
-            cache[key] = acc
-            messages.append(AssistantMessage(content=AssistantMessage.ToolUseChunk(
-                tool_use_id=event.delta.id,
-                name=acc["name"],
-                accumulated_arguments=acc["accumulated"]
-            )))
+        elif event.type == "content_block_start":
+            cache.setdefault("content_blocks", {})[event.index] = {
+                "type": event.content_block.type,
+                "id": getattr(event.content_block, "id", None),
+                "name": getattr(event.content_block, "name", None),
+                "data": ""  # accumulate raw string only
+            }
 
-        elif event.type == "content_block_stop" and event.content_block.type == "tool_use":
-            acc = cache.pop("last_assistant_message", None)
-            if acc:
-                messages.append(AssistantMessage(content=AssistantMessage.TextComplete(
-                    accumulated=acc['accumulated'],
-                    stream_id=acc['stream_id']
+        elif event.type == "content_block_delta":
+            block = cache["content_blocks"].get(event.index)
+            if not block:
+                return messages
+
+            if event.delta.type == "text_delta":
+                block["data"] += event.delta.text
+                messages.append(AssistantMessage(content=AssistantMessage.TextChunk(
+                    value=event.delta.text,
+                    accumulated=block["data"],
+                    stream_id=cache["current_message"]["stream_id"]
                 )))
-            tool_id = event.content_block.id
-            tool_acc = cache.pop(f"tool-{tool_id}", {})
-            messages.append(AssistantMessage(content=AssistantMessage.ToolUse(
-                tool_use_id=tool_id,
-                name=event.content_block.name,
-                arguments=tool_acc.get("accumulated", {})
-            )))
+
+            elif event.delta.type == "input_json_delta":
+                block["data"] += event.delta.partial_json or ""
+                messages.append(AssistantMessage(content=AssistantMessage.ToolUseChunk(
+                    tool_use_id=block['id'],
+                    name=block["name"],
+                    accumulated_arguments=block["data"]
+                )))
+
+        elif event.type == "content_block_stop":
+            block = cache["content_blocks"].pop(event.index, None)
+            if not block:
+                return messages
+
+            if block["type"] == "text":
+                messages.append(AssistantMessage(content=AssistantMessage.TextComplete(
+                    accumulated=block["data"],
+                    stream_id=cache["current_message"]["stream_id"]
+                )))
+
+            elif block["type"] == "tool_use":
+                messages.append(AssistantMessage(content=AssistantMessage.ToolUse(
+                    tool_use_id=block["id"],
+                    name=block["name"],
+                    arguments=json.loads(block["data"])
+                )))
 
         elif event.type == "message_stop":
-            acc = cache.pop("last_assistant_message", None)
-            if acc:
-                messages.append(AssistantMessage(content=AssistantMessage.TextComplete(
-                    accumulated=acc['accumulated'],
-                    stream_id=acc['stream_id']
-                )))
-            for key in list(cache.keys()):
-                if key.startswith("tool-"):
-                    tool_acc = cache.pop(key)
-                    tool_id = key.replace("tool-", "")
-                    messages.append(AssistantMessage(content=AssistantMessage.ToolUse(
-                        tool_use_id=tool_id,
-                        name=tool_acc["name"],
-                        arguments=tool_acc.get("accumulated", {})
-                    )))
+            cache.pop("current_message", None)
 
         return messages
+
+    async def _map_content(self, content) -> List[TextBlockParam | ImageBlockParam]:
+        """Map different content types to Anthropic content blocks."""
+        if isinstance(content, str):
+            return [TextBlockParam(type="text", text=content)]
+
+        if isinstance(content, ImageURL):
+            return [ImageBlockParam(
+                type="image",
+                source=URLImageSourceParam(type="url", url=content.url)
+            )]
+
+        if isinstance(content, ImagePath):
+            return [ImageBlockParam(
+                type="image",
+                source=Base64ImageSourceParam(
+                    type="base64",
+                    media_type=content.image_type(),
+                    data=await content.as_base64()
+                )
+            )]
+
+        if isinstance(content, list):
+            return [m for item in content for m in await self._map_content(item)]
+
+        raise ValueError(f"Invalid content type: {type(content)}")
+
+    async def _to_anthropic(self, message: Message) -> MessageParam | None:
+        match message:
+            case UserMessage(content=content):
+                return MessageParam(
+                    role="user",
+                    content=await self._map_content(content)
+                )
+
+            case AssistantMessage(
+                content=AssistantMessage.ToolUse(tool_use_id=tool_use_id, name=name, arguments=args)
+            ):
+                return MessageParam(
+                    role="assistant",
+                    content=[ToolUseBlockParam(
+                        type="tool_use",
+                        id=tool_use_id,
+                        name=name,
+                        input=await to_json(args)
+                    )]
+                )
+            case AssistantMessage() as message if message.complete():
+                return MessageParam(
+                    role="assistant",
+                    content=[TextBlockParam(
+                        type="text",
+                        text=await to_json_str(message.content)
+                    )]
+                )
+            case ToolMessage(tool_use_id=tool_use_id, content=content):
+                return MessageParam(
+                    role="user",
+                    content=[ToolResultBlockParam(
+                        type="tool_result",
+                        tool_use_id=tool_use_id,
+                        content=await to_json_str(content)
+                    )]
+                )
+
+            case SystemMessage():
+                return None
+
+            case _:
+                raise ValueError(f"Unknown message type: {message}")
 
     async def destroy(self):
         if hasattr(self.client, 'close'):
