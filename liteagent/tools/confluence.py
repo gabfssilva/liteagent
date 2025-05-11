@@ -69,19 +69,33 @@ class ConfluenceTools(Tools):
     def list_pages(
         self,
         space: str,
-        limit: int | None,
+        limit: int | None = Field(..., description="Maximum number of pages to return. Defaults to 1000 as the payload is small"),
     ):
-        """ Retrieve the pages from a specific space """
+        """Retrieve the pages from a specific space"""
 
-        pages = self.client.get_all_pages_from_space(space, start=0, limit=limit, expand='version')
+        pages = self.client.get_all_pages_from_space(space, start=0, limit=limit or 1000, expand='version,ancestors')
 
-        for page in pages:
-            yield {
-                "id": page["id"],
-                "title": page["title"],
-                "parent_id": page["ancestors"][0]["id"] if page["ancestors"] else None,
-                "version": page["version"]["number"],
-            }
+        pages = [ {
+            "id": page["id"],
+            "title": page["title"],
+            "parent_id": page["ancestors"][-1]["id"] if len(page.get("ancestors", []) or []) > 0 else None,
+            "version": page["version"]["number"],
+            "children": []
+        } for page in pages ]
+
+        pages_by_id = {page["id"]: page for page in pages}
+
+        root_pages = []
+
+        for page in pages_by_id.values():
+            parent_id = page.get("parent_id", None)
+
+            if parent_id and parent_id in pages_by_id:
+                pages_by_id[parent_id]["children"].append(page)
+            else:
+                root_pages.append(page)
+
+        return root_pages
 
     @tool(emoji="📝")
     def create_page(self, space: str, title: str, body: str, parent_id: Optional[str]) -> dict:
@@ -184,8 +198,12 @@ class ConfluenceTools(Tools):
 
             for space in spaces:
                 name = space['name']
+                key = space['key']
 
-                if any(matching_name.lower() in name.lower() for matching_name in contains_one_of):
+                has_name = any(matching_name.lower() in name.lower() for matching_name in contains_one_of)
+                has_key = any(matching_name.lower() in key.lower() for matching_name in contains_one_of)
+
+                if has_name or has_key:
                     yield {
                         "id": space['id'],
                         "name": name,

@@ -140,12 +140,17 @@ class Tool(ToolDef):
 
         try:
             if self.is_coroutine:
-                return await self.handler(**dump)
+                result = await self.handler(**dump)
+
+                if inspect.isasyncgen(result):
+                    return self._consume_async_gen(result)
+
+                return result
             else:
                 result = await asyncio.to_thread(self.handler, **dump)
 
                 if inspect.isgenerator(result):
-                    return self._gen_to_async(result)
+                    return await asyncio.to_thread(self._consume_gen, result)
 
                 return result
         except Exception as e:
@@ -183,13 +188,12 @@ class Tool(ToolDef):
             )
 
     @staticmethod
-    async def _gen_to_async(generator):
-        while True:
-            try:
-                item = await asyncio.to_thread(next, generator)
-                yield item
-            except StopIteration:
-                break
+    def _consume_gen(generator):
+        return list(generator)
+
+    @staticmethod
+    async def _consume_async_gen(generator):
+        return [ item async for item in generator ]
 
     def __repr__(self):
         return f"{self.emoji} {self.name}"
