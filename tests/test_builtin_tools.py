@@ -1,12 +1,12 @@
 """
-Testes para Built-in Tools - Tools que vêm com a biblioteca.
+Tests for Built-in Tools - Tools that come with the library.
 
-Valida que as tools internas funcionam corretamente:
-- Python Runner: Executa código Python arbitrário
-- Calculator: Avalia expressões matemáticas
-- Clock/Today: Retorna data e hora atual
+Validates that internal tools work correctly:
+- Python Runner: Executes arbitrary Python code
+- Calculator: Evaluates mathematical expressions
+- Clock/Today: Returns current date and time
 
-NOTA: Estes testes usam imports dinâmicos para evitar dependências opcionais (playwright).
+NOTE: These tests use dynamic imports to avoid optional dependencies (playwright).
 """
 from datetime import datetime
 from ward import test, fixture
@@ -16,30 +16,30 @@ from liteagent.providers import openai
 from tests.conftest import extract_text
 
 
-# Fixture para carregar as built-in tools dinamicamente
+# Fixture to dynamically load built-in tools
 @fixture
 def builtin_tools():
-    """Carrega as built-in tools sem passar por __init__.py para evitar dependências opcionais."""
+    """Loads built-in tools without going through __init__.py to avoid optional dependencies."""
     import sys
     import importlib.util
 
     tools = {}
 
-    # Carrega python_runner
+    # Load python_runner
     spec = importlib.util.spec_from_file_location("py_tools", "liteagent/tools/py.py")
     py_module = importlib.util.module_from_spec(spec)
     sys.modules["py_tools"] = py_module
     spec.loader.exec_module(py_module)
     tools['python_runner'] = py_module.python_runner
 
-    # Carrega calculator
+    # Load calculator
     spec = importlib.util.spec_from_file_location("calc_tools", "liteagent/tools/calc.py")
     calc_module = importlib.util.module_from_spec(spec)
     sys.modules["calc_tools"] = calc_module
     spec.loader.exec_module(calc_module)
     tools['calculator'] = calc_module.calculator
 
-    # Carrega clock tools
+    # Load clock tools
     spec = importlib.util.spec_from_file_location("clock_tools", "liteagent/tools/clock.py")
     clock_module = importlib.util.module_from_spec(spec)
     sys.modules["clock_tools"] = clock_module
@@ -50,14 +50,14 @@ def builtin_tools():
     return tools
 
 
-@test("python_runner executa código Python simples")
+@test("python_runner executes simple Python code")
 async def _(tools=builtin_tools):
     """
-    Testa que python_runner consegue executar código Python simples.
+    Tests that python_runner can execute simple Python code.
 
-    Cenário determinístico:
-    - Agent usa python_runner para calcular 5 + 3
-    - Valida que o resultado é 8
+    Deterministic scenario:
+    - Agent uses python_runner to calculate 5 + 3
+    - Validates that result is 8
     """
 
     @agent(
@@ -66,25 +66,25 @@ async def _(tools=builtin_tools):
     )
     async def code_agent(query: str) -> str:
         """
-        Responda: {query}
-        Use a ferramenta python_runner para executar código quando necessário.
+        Answer: {query}
+        Use the python_runner tool to execute code when necessary.
         """
 
-    result = await code_agent("Calcule 5 + 3 usando Python")
+    result = await code_agent("Calculate 5 + 3 using Python")
     result_text = await extract_text(result)
 
-    # Validar que o resultado contém 8
+    # Validate that result contains 8
     assert "8" in result_text
 
 
-@test("python_runner faz requisições HTTP")
+@test("python_runner makes HTTP requests")
 async def _(tools=builtin_tools):
     """
-    Testa que python_runner consegue fazer requisições HTTP.
+    Tests that python_runner can make HTTP requests.
 
-    Cenário determinístico:
-    - Agent usa python_runner para fazer request
-    - Valida que conseguiu obter resposta
+    Deterministic scenario:
+    - Agent uses python_runner to make request
+    - Validates that it got a response
     """
 
     @agent(
@@ -93,27 +93,27 @@ async def _(tools=builtin_tools):
     )
     async def http_agent(query: str) -> str:
         """
-        Responda: {query}
-        Use python_runner para fazer requisições HTTP quando necessário.
+        Answer: {query}
+        Use python_runner to make HTTP requests when necessary.
         """
 
     result = await http_agent(
-        "Use requests para fazer GET em https://httpbin.org/json e retorne a propriedade 'slideshow' do JSON"
+        "Use requests to GET https://httpbin.org/json and return the 'slideshow' property from the JSON"
     )
     result_text = await extract_text(result)
 
-    # Validar que conseguiu fazer a requisição e processar JSON
+    # Validate that it made the request and processed JSON
     assert "slideshow" in result_text.lower() or "author" in result_text.lower() or "title" in result_text.lower()
 
 
-@test("calculator avalia expressões matemáticas")
+@test("calculator evaluates mathematical expressions")
 async def _(tools=builtin_tools):
     """
-    Testa que calculator consegue avaliar expressões matemáticas.
+    Tests that calculator can evaluate mathematical expressions.
 
-    Cenário determinístico:
-    - Agent usa calculator para avaliar 10 * 5 + 2
-    - Valida que o resultado é 52
+    Deterministic scenario:
+    - Agent uses calculator to evaluate 10 * 5 + 2
+    - Validates that result is 52
     """
 
     @agent(
@@ -122,25 +122,25 @@ async def _(tools=builtin_tools):
     )
     async def math_agent(query: str) -> str:
         """
-        Responda: {query}
-        Use a ferramenta calculator para calcular expressões matemáticas.
+        Answer: {query}
+        Use the calculator tool to calculate mathematical expressions.
         """
 
-    result = await math_agent("Quanto é 10 * 5 + 2?")
+    result = await math_agent("What is 10 * 5 + 2?")
     result_text = await extract_text(result)
 
-    # Validar que o resultado é 52
+    # Validate that result is 52
     assert "52" in result_text
 
 
-@test("calculator avalia expressões complexas")
+@test("calculator evaluates complex expressions")
 async def _(tools=builtin_tools):
     """
-    Testa que calculator consegue avaliar expressões complexas.
+    Tests that calculator can evaluate complex expressions.
 
-    Cenário determinístico:
-    - Agent usa calculator para (100 / 4) + (3 ** 2)
-    - Valida que o resultado é 34.0 ou 34
+    Deterministic scenario:
+    - Agent uses calculator for (100 / 4) + (3 ** 2)
+    - Validates that result is 34.0 or 34
     """
 
     @agent(
@@ -149,25 +149,25 @@ async def _(tools=builtin_tools):
     )
     async def complex_math_agent(query: str) -> str:
         """
-        Responda: {query}
-        Use calculator para expressões matemáticas.
+        Answer: {query}
+        Use calculator for mathematical expressions.
         """
 
-    result = await complex_math_agent("Calcule (100 / 4) + (3 ** 2)")
+    result = await complex_math_agent("Calculate (100 / 4) + (3 ** 2)")
     result_text = await extract_text(result)
 
     # 100/4 = 25, 3**2 = 9, 25 + 9 = 34
     assert "34" in result_text
 
 
-@test("today retorna a data atual")
+@test("today returns current date")
 async def _(tools=builtin_tools):
     """
-    Testa que today retorna a data atual.
+    Tests that today returns the current date.
 
-    Cenário determinístico:
-    - Agent usa today para obter a data
-    - Valida que retorna algo com formato de data
+    Deterministic scenario:
+    - Agent uses today to get date
+    - Validates that it returns something with date format
     """
 
     @agent(
@@ -176,27 +176,27 @@ async def _(tools=builtin_tools):
     )
     async def date_agent(query: str) -> str:
         """
-        Responda: {query}
-        Use a ferramenta today para obter a data atual.
+        Answer: {query}
+        Use the today tool to get the current date.
         """
 
-    result = await date_agent("Qual é a data de hoje?")
+    result = await date_agent("What is today's date?")
     result_text = await extract_text(result)
 
-    # Validar que contém ano atual (2025)
+    # Validate that it contains current year (2025)
     current_year = str(datetime.now().year)
     assert current_year in result_text
 
 
-@test("clock é uma eager tool executada automaticamente")
+@test("clock is an eager tool executed automatically")
 async def _(tools=builtin_tools):
     """
-    Testa que clock é uma eager tool (executada automaticamente).
+    Tests that clock is an eager tool (executed automatically).
 
-    Cenário determinístico:
-    - clock é marcada como eager=True
-    - Agent recebe o tempo atual antes de processar a query
-    - Valida que o agent tem acesso ao timestamp
+    Deterministic scenario:
+    - clock is marked as eager=True
+    - Agent receives current time before processing query
+    - Validates that agent has access to timestamp
     """
 
     @agent(
@@ -205,25 +205,25 @@ async def _(tools=builtin_tools):
     )
     async def time_agent(query: str) -> str:
         """
-        Responda: {query}
-        Você tem acesso à ferramenta clock que foi executada automaticamente.
+        Answer: {query}
+        You have access to the clock tool which was executed automatically.
         """
 
-    result = await time_agent("Qual é a hora atual?")
+    result = await time_agent("What is the current time?")
     result_text = await extract_text(result)
 
-    # Validar que contém indicação de tempo (hora, minuto, ou "Current time")
-    assert any(word in result_text.lower() for word in ["hora", "time", ":", "current"])
+    # Validate that it contains indication of time (hour, minute, or "Current time")
+    assert any(word in result_text.lower() for word in ["time", ":", "current"])
 
 
-@test("agent usa múltiplas built-in tools juntas")
+@test("agent uses multiple built-in tools together")
 async def _(tools=builtin_tools):
     """
-    Testa que agent consegue usar múltiplas built-in tools juntas.
+    Tests that agent can use multiple built-in tools together.
 
-    Cenário determinístico:
-    - Agent tem acesso a python_runner e calculator
-    - Pode escolher qual usar baseado na tarefa
+    Deterministic scenario:
+    - Agent has access to python_runner and calculator
+    - Can choose which to use based on task
     """
 
     @agent(
@@ -232,12 +232,12 @@ async def _(tools=builtin_tools):
     )
     async def multi_tool_agent(query: str) -> str:
         """
-        Responda: {query}
-        Use python_runner para código complexo ou calculator para expressões simples.
+        Answer: {query}
+        Use python_runner for complex code or calculator for simple expressions.
         """
 
-    result = await multi_tool_agent("Calcule 15 * 3")
+    result = await multi_tool_agent("Calculate 15 * 3")
     result_text = await extract_text(result)
 
-    # Validar que calculou corretamente: 15 * 3 = 45
+    # Validate correct calculation: 15 * 3 = 45
     assert "45" in result_text

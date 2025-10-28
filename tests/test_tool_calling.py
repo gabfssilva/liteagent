@@ -1,10 +1,10 @@
 """
-Testes para Tool Calling - Agentes usando ferramentas customizadas.
+Tests for Tool Calling - Agents using custom tools.
 
-Valida que agents conseguem:
-- Chamar tools únicas e usar os dados retornados
-- Orquestrar múltiplas tools em sequência
-- Passar parâmetros estruturados para tools corretamente
+Validates that agents can:
+- Call individual tools and use returned data
+- Orchestrate multiple tools in sequence
+- Pass structured parameters to tools correctly
 """
 from pydantic import BaseModel
 from ward import test
@@ -15,7 +15,7 @@ from tests.conftest import extract_text
 
 
 class UserProfile(BaseModel):
-    """Perfil de um usuário."""
+    """User profile information."""
     name: str
     age: int
     city: str
@@ -24,7 +24,7 @@ class UserProfile(BaseModel):
 
 @tool
 def get_user_profile() -> UserProfile:
-    """Retorna o perfil do usuário atual."""
+    """Returns the current user profile."""
     return UserProfile(
         name="Gabriel Silva",
         age=32,
@@ -35,19 +35,19 @@ def get_user_profile() -> UserProfile:
 
 @tool
 def calculate_age_in_days(age_in_years: int) -> int:
-    """Calcula a idade aproximada em dias dado a idade em anos."""
+    """Calculates approximate age in days given age in years."""
     return age_in_years * 365
 
 
-@test("agente consegue chamar uma ferramenta e usar os dados retornados")
+@test("agent can call a tool and use the returned data")
 async def _():
     """
-    Testa que o agente consegue chamar uma ferramenta e usar os dados retornados.
+    Tests that agent can call a tool and use the returned data.
 
-    Cenário determinístico:
-    - Tool retorna dados fixos do usuário
-    - Agente deve chamar a tool para obter informações
-    - Validar que a resposta contém os dados corretos
+    Deterministic scenario:
+    - Tool returns fixed user data
+    - Agent must call the tool to get information
+    - Validate that response contains correct data
     """
 
     @agent(
@@ -56,28 +56,28 @@ async def _():
     )
     async def profile_agent(query: str) -> str:
         """
-        Responda a pergunta do usuário: {query}
-        Use as ferramentas disponíveis quando necessário.
+        Answer the user's question: {query}
+        Use available tools when necessary.
         """
 
-    result = await profile_agent("Qual é o nome completo e a profissão do usuário?")
+    result = await profile_agent("What is the full name and occupation of the user?")
     result_text = await extract_text(result)
     result_lower = result_text.lower()
 
-    # Validar que a resposta contém informações do perfil
+    # Validate that response contains profile information
     assert "Gabriel Silva" in result_text or "Gabriel" in result_text
-    assert "Software Engineer" in result_text or "Engineer" in result_text or "engenheiro" in result_lower
+    assert "Software Engineer" in result_text or "Engineer" in result_text or "engineer" in result_lower
 
 
-@test("agente consegue chamar múltiplas ferramentas em sequência")
+@test("agent can call multiple tools in sequence")
 async def _():
     """
-    Testa que o agente consegue chamar múltiplas ferramentas em sequência.
+    Tests that agent can call multiple tools in sequence.
 
-    Cenário determinístico:
-    - Primeira tool retorna perfil do usuário
-    - Segunda tool calcula idade em dias
-    - Agente deve orquestrar ambas as tools
+    Deterministic scenario:
+    - First tool returns user profile
+    - Second tool calculates age in days
+    - Agent must orchestrate both tools
     """
 
     @agent(
@@ -86,28 +86,28 @@ async def _():
     )
     async def multi_tool_agent(query: str) -> str:
         """
-        Responda a pergunta do usuário: {query}
-        Use as ferramentas disponíveis para obter e processar informações.
+        Answer the user's question: {query}
+        Use available tools to get and process information.
         """
 
     result = await multi_tool_agent(
-        "Quantos dias aproximadamente o usuário viveu? "
-        "Primeiro obtenha a idade dele e depois calcule."
+        "How many days approximately has the user lived? "
+        "First get their age then calculate."
     )
     result_text = await extract_text(result)
 
-    # Validar que a resposta menciona os dias (32 anos * 365 dias = 11680 dias)
-    assert "11680" in result_text or "11,680" in result_text or "dias" in result_text.lower()
+    # Validate that response mentions the days (32 years * 365 days = 11680 days)
+    assert "11680" in result_text or "11,680" in result_text or "days" in result_text.lower()
 
 
-@test("agente consegue chamar tools com parâmetros estruturados")
+@test("agent can call tools with structured parameters")
 async def _():
     """
-    Testa que o agente consegue chamar tools com parâmetros estruturados.
+    Tests that agent can call tools with structured parameters.
 
-    Cenário determinístico:
-    - Tool recebe inteiro como parâmetro
-    - Agente deve extrair o valor do prompt e passar corretamente
+    Deterministic scenario:
+    - Tool receives integer parameter
+    - Agent must extract value from prompt and pass correctly
     """
 
     @agent(
@@ -116,12 +116,12 @@ async def _():
     )
     async def calculator_agent(query: str) -> str:
         """
-        Responda a pergunta: {query}
-        Use a ferramenta de cálculo quando necessário.
+        Answer the question: {query}
+        Use the calculation tool when necessary.
         """
 
-    result = await calculator_agent("Quantos dias tem 25 anos?")
+    result = await calculator_agent("How many days are in 25 years?")
     result_text = await extract_text(result)
 
-    # Validar que calculou corretamente: 25 * 365 = 9125
+    # Validate correct calculation: 25 * 365 = 9125
     assert "9125" in result_text or "9,125" in result_text

@@ -1,10 +1,10 @@
 """
-Testes para Agent Teams - Delegação entre agentes.
+Tests for Agent Teams - Delegation between agents.
 
-Valida que:
-- Coordinator consegue delegar tarefas para specialists
-- Múltiplos specialists podem ser orquestrados corretamente
-- Teams funcionam com structured output (Pydantic models)
+Validates that:
+- Coordinator can delegate tasks to specialists
+- Multiple specialists can be orchestrated correctly
+- Teams work with structured output (Pydantic models)
 """
 from pydantic import BaseModel
 from ward import test
@@ -14,20 +14,20 @@ from liteagent.providers import openai
 from tests.conftest import extract_text
 
 
-@test("coordinator consegue delegar tarefas para specialists")
+@test("coordinator can delegate tasks to specialists")
 async def _():
     """
-    Testa que um agente coordinator consegue delegar tarefas para specialists.
+    Tests that a coordinator agent can delegate tasks to specialists.
 
-    Cenário determinístico:
-    - Specialist tem conhecimento específico (via tool)
-    - Coordinator delega para o specialist
-    - Validar que a delegação funciona corretamente
+    Deterministic scenario:
+    - Specialist has specific knowledge (via tool)
+    - Coordinator delegates to specialist
+    - Validate that delegation works correctly
     """
 
     @tool
     def get_technical_specs() -> dict:
-        """Retorna especificações técnicas do produto."""
+        """Returns technical specifications of the product."""
         return {
             "product": "Laptop X1",
             "processor": "Intel i7",
@@ -38,45 +38,45 @@ async def _():
     @agent(
         provider=openai(model="gpt-4o-mini", temperature=0),
         tools=[get_technical_specs],
-        description="Especialista em especificações técnicas de produtos."
+        description="Specialist in technical product specifications."
     )
     async def tech_specialist(query: str) -> str:
-        """Responda sobre especificações técnicas: {query}"""
+        """Answer about technical specifications: {query}"""
 
     @agent(
         provider=openai(model="gpt-4o-mini", temperature=0),
         team=[tech_specialist],
-        description="Coordenador que delega perguntas técnicas para o especialista."
+        description="Coordinator that delegates technical questions to the specialist."
     )
     async def coordinator(query: str) -> str:
         """
-        Responda a pergunta: {query}
-        SEMPRE use o tech_specialist para obter especificações técnicas.
+        Answer the question: {query}
+        ALWAYS use the tech_specialist to get technical specifications.
         """
 
-    result = await coordinator("Quais são as especificações do processador e memória RAM do Laptop X1?")
+    result = await coordinator("What are the processor and RAM specifications of the Laptop X1?")
     result_text = await extract_text(result)
 
-    # Validar que o coordinator obteve informação do specialist
+    # Validate that coordinator got information from specialist
     result_lower = result_text.lower()
     assert "i7" in result_lower or "intel" in result_lower
     assert "16gb" in result_lower or "16 gb" in result_lower
 
 
-@test("coordinator orquestra múltiplos specialists especializados")
+@test("coordinator orchestrates multiple specialized specialists")
 async def _():
     """
-    Testa coordinator com múltiplos specialists especializados.
+    Tests coordinator with multiple specialized specialists.
 
-    Cenário determinístico:
-    - Sales specialist com informações de preço
-    - Support specialist com informações de garantia
-    - Coordinator delega para o specialist correto
+    Deterministic scenario:
+    - Sales specialist with pricing information
+    - Support specialist with warranty information
+    - Coordinator delegates to correct specialist
     """
 
     @tool
     def get_pricing() -> dict:
-        """Retorna informações de preço."""
+        """Returns pricing information."""
         return {
             "product": "Laptop X1",
             "price": 5999.90,
@@ -86,7 +86,7 @@ async def _():
 
     @tool
     def get_warranty() -> dict:
-        """Retorna informações de garantia."""
+        """Returns warranty information."""
         return {
             "product": "Laptop X1",
             "warranty_years": 2,
@@ -97,61 +97,61 @@ async def _():
     @agent(
         provider=openai(model="gpt-4o-mini", temperature=0),
         tools=[get_pricing],
-        description="Especialista em preços e descontos."
+        description="Specialist in prices and discounts."
     )
     async def sales_specialist(query: str) -> str:
-        """Responda sobre preços: {query}"""
+        """Answer about prices: {query}"""
 
     @agent(
         provider=openai(model="gpt-4o-mini", temperature=0),
         tools=[get_warranty],
-        description="Especialista em garantia e suporte."
+        description="Specialist in warranty and support."
     )
     async def support_specialist(query: str) -> str:
-        """Responda sobre garantia: {query}"""
+        """Answer about warranty: {query}"""
 
     @agent(
         provider=openai(model="gpt-4o-mini", temperature=0),
         team=[sales_specialist, support_specialist],
-        description="Coordenador que delega para especialistas de vendas ou suporte."
+        description="Coordinator that delegates to sales or support specialists."
     )
     async def sales_coordinator(query: str) -> str:
         """
-        Responda: {query}
-        Use sales_specialist para perguntas sobre preços.
-        Use support_specialist para perguntas sobre garantia.
+        Answer: {query}
+        Use sales_specialist for questions about prices.
+        Use support_specialist for questions about warranty.
         """
 
-    # Testar delegação para sales specialist
-    result_price = await sales_coordinator("Qual é o preço do Laptop X1?")
+    # Test delegation to sales specialist
+    result_price = await sales_coordinator("What is the price of the Laptop X1?")
     price_text = await extract_text(result_price)
-    assert "5999" in price_text or "R$" in price_text or "preço" in price_text.lower()
+    assert "5999" in price_text or "R$" in price_text or "price" in price_text.lower()
 
-    # Testar delegação para support specialist
-    result_warranty = await sales_coordinator("Qual é o período de garantia do Laptop X1?")
+    # Test delegation to support specialist
+    result_warranty = await sales_coordinator("What is the warranty period for the Laptop X1?")
     warranty_text = await extract_text(result_warranty)
-    assert "2" in warranty_text and ("ano" in warranty_text.lower() or "year" in warranty_text.lower())
+    assert "2" in warranty_text and ("year" in warranty_text.lower())
 
 
-@test("teams funcionam com structured output")
+@test("teams work with structured output")
 async def _():
     """
-    Testa que teams funcionam com structured output.
+    Tests that teams work with structured output.
 
-    Cenário determinístico:
-    - Specialist retorna dados estruturados
-    - Coordinator processa e retorna estruturado também
+    Deterministic scenario:
+    - Specialist returns structured data
+    - Coordinator processes and also returns structured output
     """
 
     class ProductInfo(BaseModel):
-        """Informações do produto."""
+        """Product information."""
         name: str
         category: str
         available: bool
 
     @tool
     def get_product_info() -> ProductInfo:
-        """Retorna informações do produto."""
+        """Returns product information."""
         return ProductInfo(
             name="Laptop X1",
             category="Electronics",
@@ -161,13 +161,13 @@ async def _():
     @agent(
         provider=openai(model="gpt-4o-mini", temperature=0),
         tools=[get_product_info],
-        description="Especialista em catálogo de produtos."
+        description="Specialist in product catalog."
     )
     async def catalog_specialist(query: str) -> str:
-        """Responda sobre produtos: {query}"""
+        """Answer about products: {query}"""
 
     class AvailabilityReport(BaseModel):
-        """Relatório de disponibilidade."""
+        """Availability report."""
         product_name: str
         is_available: bool
         status: str
@@ -178,16 +178,16 @@ async def _():
     )
     async def availability_checker(query: str) -> AvailabilityReport:
         """
-        Verifique disponibilidade: {query}
-        Consulte o especialista e retorne um relatório estruturado.
+        Check availability: {query}
+        Consult the specialist and return a structured report.
         """
 
-    result = await availability_checker("O Laptop X1 está disponível?")
+    result = await availability_checker("Is the Laptop X1 available?")
 
-    # Validar structured output
+    # Validate structured output
     assert isinstance(result, AvailabilityReport)
     assert result.product_name == "Laptop X1"
     assert result.is_available is True
-    # Aceita variações de "disponível" em diferentes capitalizações
+    # Accept variations of "available" in different capitalizations
     status_lower = result.status.lower()
-    assert any(word in status_lower for word in ["available", "stock", "disponível", "yes"])
+    assert any(word in status_lower for word in ["available", "stock", "yes"])

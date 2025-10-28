@@ -1,16 +1,16 @@
 """
-Configurações e fixtures compartilhadas entre todos os testes.
+Shared configurations and fixtures for all tests.
 """
 
 
 async def extract_text(result) -> str:
     """
-    Helper para extrair texto de diferentes tipos de retorno de agent.
+    Helper to extract text from different agent return types.
 
-    Agents podem retornar:
-    - str diretamente
-    - Message com content TextStream
-    - Message com content str
+    Agents can return:
+    - str directly
+    - Message with content TextStream
+    - Message with content str
     """
     if isinstance(result, str):
         return result
