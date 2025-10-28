@@ -5,9 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = "==3.12.*"
 dependencies = [
+    "aiofiles>=23.2.1",
     "asyncstdlib>=3.13.1",
     "httpx>=0.24.0",
     "joblib>=1.4.2",
+    "numpy>=1.24.0",
+    "overrides>=7.0.0",
     "py-spy>=0.4.0",
     "pydantic>=2.10.5",
     "structlog>=25.1.0",
@@ -129,6 +132,8 @@ dev = [
     "import-tracker>=3.2.1",
     "importtime>=1.0.3.2",
     "docker>=7.1.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.25.2",
 ]
 
 rag_minimal = [
