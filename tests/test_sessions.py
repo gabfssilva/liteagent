@@ -4,23 +4,22 @@ Testes para Stateful Sessions - Conversações com memória.
 Valida que sessions:
 - Acumulam múltiplos fatos ao longo da conversa
 - Conseguem fazer reset para limpar a memória
-- Mantêm contexto entre mensagens (teste marcado como flaky)
+- Mantêm contexto entre mensagens (teste marcado como skip)
 """
-import pytest
+from ward import test, skip
 
 from liteagent import agent
 from liteagent.providers import openai
 
 
-@pytest.mark.skip(reason="Session context test is flaky - requires investigation of session implementation")
-@pytest.mark.asyncio
-async def test_session_remembers_context():
+@skip("Session context test is flaky - requires investigation of session implementation")
+@test("sessions mantêm contexto entre múltiplas mensagens")
+async def _():
     """
     Testa que sessions mantêm contexto entre múltiplas mensagens.
 
     NOTA: Este teste está sendo pulado pois apresenta comportamento não-determinístico.
-    Os testes test_session_accumulates_multiple_facts e test_session_reset_clears_memory
-    já validam que sessions funcionam corretamente.
+    Os testes de acúmulo de fatos e reset já validam que sessions funcionam corretamente.
 
     Cenário determinístico:
     - Primeira mensagem: apresenta informação
@@ -28,10 +27,7 @@ async def test_session_remembers_context():
     - Session deve lembrar e responder corretamente
     """
 
-    @agent(
-        provider=openai(model="gpt-4o-mini", temperature=0),
-        tools=[]
-    )
+    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
     async def memory_agent(query: str) -> str:
         """Responda: {query}"""
 
@@ -58,8 +54,8 @@ async def test_session_remembers_context():
     assert "32" in response_text or "trinta e dois" in response_text
 
 
-@pytest.mark.asyncio
-async def test_session_accumulates_multiple_facts():
+@test("sessions acumulam múltiplos fatos ao longo da conversa")
+async def _():
     """
     Testa que sessions acumulam múltiplos fatos ao longo da conversa.
 
@@ -69,10 +65,7 @@ async def test_session_accumulates_multiple_facts():
     - Session deve lembrar todas as informações
     """
 
-    @agent(
-        provider=openai(model="gpt-4o-mini", temperature=0),
-        tools=[]
-    )
+    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
     async def accumulator_agent(query: str) -> str:
         """Responda: {query}"""
 
@@ -105,8 +98,8 @@ async def test_session_accumulates_multiple_facts():
     assert "são paulo" in response_text or "paulo" in response_text
 
 
-@pytest.mark.asyncio
-async def test_session_reset_clears_memory():
+@test("reset limpa a memória da sessão")
+async def _():
     """
     Testa que reset() limpa a memória da sessão.
 
@@ -117,10 +110,7 @@ async def test_session_reset_clears_memory():
     - Não deve lembrar após reset
     """
 
-    @agent(
-        provider=openai(model="gpt-4o-mini", temperature=0),
-        tools=[]
-    )
+    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
     async def resettable_agent(query: str) -> str:
         """Responda: {query}"""
 

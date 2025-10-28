@@ -6,8 +6,8 @@ Valida que agents conseguem:
 - Orquestrar múltiplas tools em sequência
 - Passar parâmetros estruturados para tools corretamente
 """
-import pytest
 from pydantic import BaseModel
+from ward import test
 
 from liteagent import agent, tool
 from liteagent.providers import openai
@@ -39,8 +39,8 @@ def calculate_age_in_days(age_in_years: int) -> int:
     return age_in_years * 365
 
 
-@pytest.mark.asyncio
-async def test_tool_calling_single_tool():
+@test("agente consegue chamar uma ferramenta e usar os dados retornados")
+async def _():
     """
     Testa que o agente consegue chamar uma ferramenta e usar os dados retornados.
 
@@ -69,8 +69,8 @@ async def test_tool_calling_single_tool():
     assert "Software Engineer" in result_text or "Engineer" in result_text or "engenheiro" in result_lower
 
 
-@pytest.mark.asyncio
-async def test_tool_calling_multiple_tools():
+@test("agente consegue chamar múltiplas ferramentas em sequência")
+async def _():
     """
     Testa que o agente consegue chamar múltiplas ferramentas em sequência.
 
@@ -100,8 +100,8 @@ async def test_tool_calling_multiple_tools():
     assert "11680" in result_text or "11,680" in result_text or "dias" in result_text.lower()
 
 
-@pytest.mark.asyncio
-async def test_tool_with_structured_input():
+@test("agente consegue chamar tools com parâmetros estruturados")
+async def _():
     """
     Testa que o agente consegue chamar tools com parâmetros estruturados.
 

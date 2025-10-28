@@ -4,9 +4,9 @@ Testes para structured output com OpenAI.
 Este teste verifica que o agent consegue retornar structured output
 usando Pydantic models de forma determinística.
 """
-import pytest
 from typing import Literal
 from pydantic import BaseModel
+from ward import test
 
 from liteagent import agent
 from liteagent.providers import openai
@@ -20,8 +20,8 @@ class NumberClassification(BaseModel):
     classification: Literal["even_positive", "even_negative", "odd_positive", "odd_negative"]
 
 
-@pytest.mark.asyncio
-async def test_structured_output_deterministic():
+@test("structured output retorna classificação correta e determinística")
+async def _():
     """
     Testa que o agent retorna structured output correto e determinístico.
 
@@ -32,10 +32,7 @@ async def test_structured_output_deterministic():
     e retorna o objeto Pydantic diretamente.
     """
 
-    @agent(
-        provider=openai(model="gpt-4o-mini", temperature=0),
-        tools=[]
-    )
+    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
     async def classify_number(prompt: str) -> NumberClassification:
         """
         {prompt}
@@ -78,8 +75,8 @@ async def test_structured_output_deterministic():
     assert result_4.classification == "odd_negative"
 
 
-@pytest.mark.asyncio
-async def test_structured_output_simple():
+@test("structured output extrai informação pessoal de texto natural")
+async def _():
     """
     Testa structured output simples com informação pessoal.
 
@@ -93,10 +90,7 @@ async def test_structured_output_simple():
         age: int
         city: str
 
-    @agent(
-        provider=openai(model="gpt-4o-mini", temperature=0),
-        tools=[]
-    )
+    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
     async def extract_person_info(text: str) -> PersonInfo:
         """
         Extrai informação estruturada sobre a pessoa do texto: {text}

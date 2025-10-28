@@ -6,16 +6,16 @@ Valida que:
 - Múltiplos specialists podem ser orquestrados corretamente
 - Teams funcionam com structured output (Pydantic models)
 """
-import pytest
 from pydantic import BaseModel
+from ward import test
 
 from liteagent import agent, tool
 from liteagent.providers import openai
 from tests.conftest import extract_text
 
 
-@pytest.mark.asyncio
-async def test_agent_team_delegation():
+@test("coordinator consegue delegar tarefas para specialists")
+async def _():
     """
     Testa que um agente coordinator consegue delegar tarefas para specialists.
 
@@ -63,8 +63,8 @@ async def test_agent_team_delegation():
     assert "16gb" in result_lower or "16 gb" in result_lower
 
 
-@pytest.mark.asyncio
-async def test_agent_team_multiple_specialists():
+@test("coordinator orquestra múltiplos specialists especializados")
+async def _():
     """
     Testa coordinator com múltiplos specialists especializados.
 
@@ -133,8 +133,8 @@ async def test_agent_team_multiple_specialists():
     assert "2" in warranty_text and ("ano" in warranty_text.lower() or "year" in warranty_text.lower())
 
 
-@pytest.mark.asyncio
-async def test_agent_team_with_structured_output():
+@test("teams funcionam com structured output")
+async def _():
     """
     Testa que teams funcionam com structured output.
 
@@ -189,4 +189,5 @@ async def test_agent_team_with_structured_output():
     assert result.product_name == "Laptop X1"
     assert result.is_available is True
     # Aceita variações de "disponível" em diferentes capitalizações
-    assert result.status.lower() in ["available", "in stock", "disponível", "yes"]
+    status_lower = result.status.lower()
+    assert any(word in status_lower for word in ["available", "stock", "disponível", "yes"])

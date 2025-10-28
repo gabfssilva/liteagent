@@ -6,50 +6,52 @@ Valida que as tools internas funcionam corretamente:
 - Calculator: Avalia expressões matemáticas
 - Clock/Today: Retorna data e hora atual
 
-NOTA: Estes testes estão marcados como skip porque algumas dependências opcionais
-(playwright para browser tool) causam erro de import ao carregar liteagent.tools.
-Para rodar estes testes, instale todas as dependências: uv sync --group all
+NOTA: Estes testes usam imports dinâmicos para evitar dependências opcionais (playwright).
 """
-import pytest
 from datetime import datetime
+from ward import test, fixture
 
 from liteagent import agent
 from liteagent.providers import openai
 from tests.conftest import extract_text
 
-# Try to import tools, skip all tests if dependencies are missing
-try:
+
+# Fixture para carregar as built-in tools dinamicamente
+@fixture
+def builtin_tools():
+    """Carrega as built-in tools sem passar por __init__.py para evitar dependências opcionais."""
     import sys
     import importlib.util
 
-    # Carrega módulos diretamente sem passar por __init__.py
+    tools = {}
+
+    # Carrega python_runner
     spec = importlib.util.spec_from_file_location("py_tools", "liteagent/tools/py.py")
     py_module = importlib.util.module_from_spec(spec)
     sys.modules["py_tools"] = py_module
     spec.loader.exec_module(py_module)
-    python_runner = py_module.python_runner
+    tools['python_runner'] = py_module.python_runner
 
+    # Carrega calculator
     spec = importlib.util.spec_from_file_location("calc_tools", "liteagent/tools/calc.py")
     calc_module = importlib.util.module_from_spec(spec)
     sys.modules["calc_tools"] = calc_module
     spec.loader.exec_module(calc_module)
-    calculator = calc_module.calculator
+    tools['calculator'] = calc_module.calculator
 
+    # Carrega clock tools
     spec = importlib.util.spec_from_file_location("clock_tools", "liteagent/tools/clock.py")
     clock_module = importlib.util.module_from_spec(spec)
     sys.modules["clock_tools"] = clock_module
     spec.loader.exec_module(clock_module)
-    clock_tool = clock_module.clock
-    today = clock_module.today
+    tools['clock'] = clock_module.clock
+    tools['today'] = clock_module.today
 
-    TOOLS_AVAILABLE = True
-except Exception as e:
-    TOOLS_AVAILABLE = False
-    pytestmark = pytest.mark.skip(reason=f"Built-in tools dependencies not available: {e}")
+    return tools
 
 
-@pytest.mark.asyncio
-async def test_python_runner_simple_calculation():
+@test("python_runner executa código Python simples")
+async def _(tools=builtin_tools):
     """
     Testa que python_runner consegue executar código Python simples.
 
@@ -60,7 +62,7 @@ async def test_python_runner_simple_calculation():
 
     @agent(
         provider=openai(model="gpt-4o-mini", temperature=0),
-        tools=[python_runner]
+        tools=[tools['python_runner']]
     )
     async def code_agent(query: str) -> str:
         """
@@ -75,8 +77,8 @@ async def test_python_runner_simple_calculation():
     assert "8" in result_text
 
 
-@pytest.mark.asyncio
-async def test_python_runner_http_request():
+@test("python_runner faz requisições HTTP")
+async def _(tools=builtin_tools):
     """
     Testa que python_runner consegue fazer requisições HTTP.
 
@@ -87,7 +89,7 @@ async def test_python_runner_http_request():
 
     @agent(
         provider=openai(model="gpt-4o-mini", temperature=0),
-        tools=[python_runner]
+        tools=[tools['python_runner']]
     )
     async def http_agent(query: str) -> str:
         """
@@ -104,8 +106,8 @@ async def test_python_runner_http_request():
     assert "slideshow" in result_text.lower() or "author" in result_text.lower() or "title" in result_text.lower()
 
 
-@pytest.mark.asyncio
-async def test_calculator_tool():
+@test("calculator avalia expressões matemáticas")
+async def _(tools=builtin_tools):
     """
     Testa que calculator consegue avaliar expressões matemáticas.
 
@@ -116,7 +118,7 @@ async def test_calculator_tool():
 
     @agent(
         provider=openai(model="gpt-4o-mini", temperature=0),
-        tools=[calculator]
+        tools=[tools['calculator']]
     )
     async def math_agent(query: str) -> str:
         """
@@ -131,8 +133,8 @@ async def test_calculator_tool():
     assert "52" in result_text
 
 
-@pytest.mark.asyncio
-async def test_calculator_complex_expression():
+@test("calculator avalia expressões complexas")
+async def _(tools=builtin_tools):
     """
     Testa que calculator consegue avaliar expressões complexas.
 
@@ -143,7 +145,7 @@ async def test_calculator_complex_expression():
 
     @agent(
         provider=openai(model="gpt-4o-mini", temperature=0),
-        tools=[calculator]
+        tools=[tools['calculator']]
     )
     async def complex_math_agent(query: str) -> str:
         """
@@ -158,8 +160,8 @@ async def test_calculator_complex_expression():
     assert "34" in result_text
 
 
-@pytest.mark.asyncio
-async def test_today_tool():
+@test("today retorna a data atual")
+async def _(tools=builtin_tools):
     """
     Testa que today retorna a data atual.
 
@@ -170,7 +172,7 @@ async def test_today_tool():
 
     @agent(
         provider=openai(model="gpt-4o-mini", temperature=0),
-        tools=[today]
+        tools=[tools['today']]
     )
     async def date_agent(query: str) -> str:
         """
@@ -186,8 +188,8 @@ async def test_today_tool():
     assert current_year in result_text
 
 
-@pytest.mark.asyncio
-async def test_clock_eager_tool():
+@test("clock é uma eager tool executada automaticamente")
+async def _(tools=builtin_tools):
     """
     Testa que clock é uma eager tool (executada automaticamente).
 
@@ -199,7 +201,7 @@ async def test_clock_eager_tool():
 
     @agent(
         provider=openai(model="gpt-4o-mini", temperature=0),
-        tools=[clock_tool]
+        tools=[tools['clock']]
     )
     async def time_agent(query: str) -> str:
         """
@@ -214,8 +216,8 @@ async def test_clock_eager_tool():
     assert any(word in result_text.lower() for word in ["hora", "time", ":", "current"])
 
 
-@pytest.mark.asyncio
-async def test_multiple_builtin_tools():
+@test("agent usa múltiplas built-in tools juntas")
+async def _(tools=builtin_tools):
     """
     Testa que agent consegue usar múltiplas built-in tools juntas.
 
@@ -226,7 +228,7 @@ async def test_multiple_builtin_tools():
 
     @agent(
         provider=openai(model="gpt-4o-mini", temperature=0),
-        tools=[python_runner, calculator]
+        tools=[tools['python_runner'], tools['calculator']]
     )
     async def multi_tool_agent(query: str) -> str:
         """

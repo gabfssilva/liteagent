@@ -1,7 +1,6 @@
 """
 Configurações e fixtures compartilhadas entre todos os testes.
 """
-import pytest
 
 
 async def extract_text(result) -> str:
