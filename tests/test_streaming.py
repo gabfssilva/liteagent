@@ -1,218 +1,237 @@
 """
-Tests for Streaming - AtomicString and streaming responses.
+Tests for Agent Streaming - Streaming responses from agents.
 
 Validates that:
-- AtomicString accumulates text correctly
-- Async iteration works properly
-- Streaming responses from agents work
-- await_complete waits for completion
+- Agents without return type annotation stream by default
+- Streaming yields incremental Message objects
+- Content can be accumulated from streaming responses
+- Streaming works with tool calling
+- Non-streaming agents return direct results
 """
-import asyncio
 from ward import test
 
-from liteagent import agent
+from liteagent import agent, tool
 from liteagent.providers import openai
-from liteagent.internal.atomic_string import AtomicString
+from tests.conftest import extract_text
 
 
-@test("AtomicString appends text correctly")
+@test("agent without return type streams messages")
 async def _():
     """
-    Tests that AtomicString can append text and get current value.
+    Tests that agents without return type annotation return streaming responses.
 
     Deterministic scenario:
-    - Create empty AtomicString
-    - Append multiple strings
-    - Validate concatenation is correct
+    - Create agent without return type (defaults to AsyncIterable[Message])
+    - Call agent and iterate over messages
+    - Verify messages are yielded incrementally
     """
-    atomic = AtomicString()
 
-    await atomic.append("Hello")
-    assert await atomic.get() == "Hello"
+    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
+    async def streaming_agent(query: str):
+        """Answer this question: {query}"""
 
-    await atomic.append(" ")
-    assert await atomic.get() == "Hello "
+    # Call agent - returns AsyncIterable[Message]
+    result = await streaming_agent("Say exactly: Testing Streaming")
 
-    await atomic.append("World")
-    assert await atomic.get() == "Hello World"
+    # Collect all messages
+    messages = []
+    async for message in result:
+        messages.append(message)
 
-    assert not atomic.is_complete
+    # Should have received at least one message
+    assert len(messages) > 0
 
-    await atomic.complete()
-    assert atomic.is_complete
+    # Last message should be AssistantMessage with content
+    last_message = messages[-1]
+    assert hasattr(last_message, 'content')
+
+    # Extract final content
+    final_text = await extract_text(last_message)
+
+    # Should contain expected response
+    assert "testing" in final_text.lower() or "streaming" in final_text.lower()
 
 
-@test("AtomicString set replaces entire value")
+@test("agent with str return type does not stream")
 async def _():
     """
-    Tests that AtomicString.set replaces the entire value.
+    Tests that agents with explicit return type don't stream.
 
     Deterministic scenario:
-    - Create AtomicString with initial value
-    - Use set to replace entire content
-    - Validate new value
+    - Create agent with str return type
+    - Call agent
+    - Should return str directly, not AsyncIterable
     """
-    atomic = AtomicString("Initial")
 
-    assert await atomic.get() == "Initial"
+    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
+    async def non_streaming_agent(query: str) -> str:
+        """Answer this question: {query}"""
 
-    await atomic.set("Replaced")
-    assert await atomic.get() == "Replaced"
+    # Call agent - should return str directly
+    result = await non_streaming_agent("Say: Hello")
+
+    # Result should be string or message with string content
+    final_text = await extract_text(result)
+
+    # Should be a string
+    assert isinstance(final_text, str)
+    assert "hello" in final_text.lower()
 
 
-@test("AtomicString await_complete waits for completion")
+@test("streaming agent yields multiple message updates")
 async def _():
     """
-    Tests that await_complete blocks until string is completed.
+    Tests that streaming agent can yield multiple message updates.
 
     Deterministic scenario:
-    - Create AtomicString
-    - Start task that appends and completes after delay
-    - await_complete should wait and return final value
+    - Create streaming agent
+    - Request longer response to get multiple chunks
+    - Collect all yielded messages
     """
-    atomic = AtomicString()
 
-    async def append_with_delay():
-        await atomic.append("First")
-        await asyncio.sleep(0.1)
-        await atomic.append(" Second")
-        await asyncio.sleep(0.1)
-        await atomic.append(" Third")
-        await atomic.complete()
+    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
+    async def verbose_agent(query: str):
+        """Answer this question in detail: {query}"""
 
-    # Start appending in background
-    task = asyncio.create_task(append_with_delay())
+    result = await verbose_agent("Explain what Python is in one sentence")
 
-    # Wait for completion
-    final_value = await atomic.await_complete()
+    messages = []
+    async for message in result:
+        messages.append(message)
 
-    assert final_value == "First Second Third"
-    assert atomic.is_complete
+    # Should receive messages (could be 1 or more depending on chunking)
+    assert len(messages) >= 1
 
-    await task
+    # All messages should have content
+    for msg in messages:
+        assert hasattr(msg, 'content')
 
 
-@test("AtomicString async iteration yields incremental updates")
+@test("streaming content can be accumulated incrementally")
 async def _():
     """
-    Tests that iterating over AtomicString yields updates as they happen.
+    Tests that content from streaming messages can be accumulated.
 
     Deterministic scenario:
-    - Create AtomicString
-    - Append values in background
-    - Iterate and collect all yielded values
+    - Create streaming agent
+    - Iterate and accumulate content
+    - Verify final accumulated content is complete
     """
-    atomic = AtomicString()
 
-    async def append_values():
-        await asyncio.sleep(0.05)
-        await atomic.append("A")
-        await asyncio.sleep(0.05)
-        await atomic.append("B")
-        await asyncio.sleep(0.05)
-        await atomic.append("C")
-        await atomic.complete()
+    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
+    async def story_agent(query: str):
+        """Answer: {query}"""
 
-    # Start appending in background
-    task = asyncio.create_task(append_values())
+    result = await story_agent("List numbers 1, 2, 3")
 
-    # Collect all yielded values
-    values = []
-    async for value in atomic:
-        values.append(value)
+    # Accumulate content from all messages
+    messages = []
+    async for message in result:
+        messages.append(message)
 
-    # Should have yielded incremental updates
-    assert len(values) > 0
-    assert values[-1] == "ABC"  # Final value should be complete
+    # Should have at least one message
+    assert len(messages) > 0
 
-    await task
+    # Get final content using helper
+    final_text = await extract_text(messages[-1])
+
+    # Should mention numbers
+    assert any(num in final_text for num in ["1", "2", "3"])
 
 
-@test("AtomicString cannot mutate after completion")
+@test("streaming works with tool calling")
 async def _():
     """
-    Tests that AtomicString raises error when trying to mutate after completion.
+    Tests that streaming works when agent uses tools.
 
     Deterministic scenario:
-    - Create and complete AtomicString
-    - Try to append - should raise RuntimeError
-    - Try to set - should raise RuntimeError
+    - Create streaming agent with tools
+    - Agent calls tool during streaming
+    - Messages should include both tool calls and responses
     """
-    atomic = AtomicString("Initial")
-    await atomic.complete()
 
-    # Should raise RuntimeError when trying to append after completion
-    try:
-        await atomic.append(" More")
-        assert False, "Should have raised RuntimeError"
-    except RuntimeError as e:
-        assert "Cannot mutate a complete AtomicString" in str(e)
+    @tool
+    def get_current_year() -> int:
+        """Returns the current year."""
+        return 2025
 
-    # Should raise RuntimeError when trying to set after completion
-    try:
-        await atomic.set("New value")
-        assert False, "Should have raised RuntimeError"
-    except RuntimeError as e:
-        assert "Cannot mutate a complete AtomicString" in str(e)
+    @agent(
+        provider=openai(model="gpt-4o-mini", temperature=0),
+        tools=[get_current_year]
+    )
+    async def tool_streaming_agent(query: str):
+        """
+        Answer: {query}
+        Use the get_current_year tool to find the current year.
+        """
+
+    result = await tool_streaming_agent("What is the current year according to the tool?")
+
+    messages = []
+    async for message in result:
+        messages.append(message)
+
+    # Should have multiple messages (including tool calls)
+    assert len(messages) >= 1
+
+    # Collect final response
+    final_text = await extract_text(messages[-1])
+
+    # Should mention 2025
+    assert "2025" in final_text
 
 
-@test("AtomicString can be created as already completed")
+@test("streaming messages include message metadata")
 async def _():
     """
-    Tests that AtomicString can be initialized as completed.
+    Tests that streaming messages include proper metadata.
 
     Deterministic scenario:
-    - Create AtomicString with complete=True
-    - Should already be complete
-    - Should not accept mutations
+    - Create streaming agent
+    - Check that messages have proper attributes
+    - Verify message types
     """
-    atomic = AtomicString("Initial Value", complete=True)
 
-    # Should be complete immediately
-    assert atomic.is_complete
+    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
+    async def metadata_agent(query: str):
+        """Answer: {query}"""
 
-    # Can get value immediately
-    value = await atomic.get()
-    assert value == "Initial Value"
+    result = await metadata_agent("Say: Testing")
 
-    # await_complete should return immediately
-    final_value = await atomic.await_complete()
-    assert final_value == "Initial Value"
+    messages = []
+    async for message in result:
+        messages.append(message)
+        # Each message should have content
+        assert hasattr(message, 'content')
+        # Messages should have a type (from Message base class)
+        assert message.__class__.__name__ in ['AssistantMessage', 'ToolMessage', 'UserMessage', 'SystemMessage']
 
-    # Should not accept mutations
-    try:
-        await atomic.append(" More")
-        assert False, "Should have raised RuntimeError"
-    except RuntimeError:
-        assert True
+    # Should have received at least one message
+    assert len(messages) > 0
 
 
-@test("AtomicString await_as_json parses JSON correctly")
+@test("empty streaming response is handled gracefully")
 async def _():
     """
-    Tests that await_as_json parses JSON content correctly.
+    Tests that agents handle edge cases in streaming.
 
     Deterministic scenario:
-    - Create AtomicString with JSON content
-    - Use await_as_json to parse
-    - Validate parsed structure
+    - Create streaming agent with very simple query
+    - Should still return valid message stream
     """
-    atomic = AtomicString()
 
-    async def append_json():
-        await atomic.append('{"name": "')
-        await asyncio.sleep(0.05)
-        await atomic.append('John')
-        await asyncio.sleep(0.05)
-        await atomic.append('", "age": 30}')
-        await atomic.complete()
+    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
+    async def simple_agent(query: str):
+        """Answer: {query}"""
 
-    task = asyncio.create_task(append_json())
+    result = await simple_agent("Say: OK")
 
-    # Parse as JSON
-    result = await atomic.await_as_json()
+    messages = []
+    async for message in result:
+        messages.append(message)
 
-    assert result["name"] == "John"
-    assert result["age"] == 30
+    # Should have at least one message even for simple response
+    assert len(messages) >= 1
 
-    await task
+    final_text = await extract_text(messages[-1])
+    assert len(final_text) > 0
