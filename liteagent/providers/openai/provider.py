@@ -44,6 +44,7 @@ class OpenAICompatible(Provider):
         oai_messages = list(filter(lambda m: m is not None, oai_messages))
 
         cache: dict = {}
+        cache['respond_as'] = respond_as  # Store respond_as in cache for later use
 
         try:
             async with self.client.beta.chat.completions.stream(
@@ -87,9 +88,28 @@ class OpenAICompatible(Provider):
                     return None
 
             case ContentDoneEvent():
+                import json
+                from pydantic import BaseModel
+
+                # Check if we have a respond_as type and an assistant_stream with JSON content
+                respond_as = cache.get('respond_as')
+                assistant_stream = cache.get('assistant_stream')
+
+                # Complete all streams
                 for key in list(cache.keys()):
-                    tool_stream = cache.pop(key)
-                    await tool_stream.complete()
+                    if key not in ['respond_as'] and isinstance(cache[key], AtomicString):
+                        tool_stream = cache.pop(key)
+                        await tool_stream.complete()
+
+                # If we have structured output, parse it and return as the Pydantic type
+                if respond_as and assistant_stream and isinstance(respond_as, type) and issubclass(respond_as, BaseModel):
+                    json_content = await assistant_stream.await_complete()
+                    try:
+                        parsed_obj = respond_as.model_validate_json(json_content)
+                        return AssistantMessage(content=parsed_obj)
+                    except Exception as e:
+                        # If parsing fails, fall back to returning the text
+                        pass
 
                 return None
 
