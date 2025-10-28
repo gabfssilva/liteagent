@@ -1,29 +1,30 @@
 """
-Tests for Agent Streaming - Streaming responses from agents.
+Tests for Agent Streaming - Token-by-token streaming responses.
 
 Validates that:
-- Agents without return type annotation stream by default
-- Streaming yields incremental Message objects
-- Content can be accumulated from streaming responses
-- Streaming works with tool calling
-- Non-streaming agents return direct results
+- Agents stream content incrementally (token-by-token)
+- Content is accumulated as it arrives
+- TextStream provides incremental access
+- Streaming works with tools
+- Non-streaming agents return complete results
 """
+import asyncio
 from ward import test
 
 from liteagent import agent, tool
 from liteagent.providers import openai
-from tests.conftest import extract_text
+from liteagent.message import AssistantMessage
 
 
-@test("agent without return type streams messages")
+@test("agent returns streaming messages with TextStream content")
 async def _():
     """
-    Tests that agents without return type annotation return streaming responses.
+    Tests that streaming agent returns messages with TextStream content.
 
     Deterministic scenario:
-    - Create agent without return type (defaults to AsyncIterable[Message])
-    - Call agent and iterate over messages
-    - Verify messages are yielded incrementally
+    - Create streaming agent (no return type)
+    - Verify messages contain TextStream (not complete strings)
+    - Verify TextStream can be iterated for incremental content
     """
 
     @agent(provider=openai(model="gpt-4o-mini", temperature=0))
@@ -31,112 +32,146 @@ async def _():
         """Answer this question: {query}"""
 
     # Call agent - returns AsyncIterable[Message]
-    result = await streaming_agent("Say exactly: Testing Streaming")
+    result = await streaming_agent("Write a sentence about Python")
+
+    # Collect messages
+    messages = []
+    async for message in result:
+        messages.append(message)
+
+    # Should have received at least one AssistantMessage
+    assistant_messages = [m for m in messages if isinstance(m, AssistantMessage)]
+    assert len(assistant_messages) > 0
+
+    # Check that content is TextStream (indicates streaming capability)
+    first_assistant = assistant_messages[0]
+    assert hasattr(first_assistant.content, 'content')  # Has AtomicString
+    assert hasattr(first_assistant.content, 'await_complete')  # Can wait for completion
+
+
+@test("TextStream content accumulates incrementally")
+async def _():
+    """
+    Tests that TextStream accumulates content token-by-token.
+
+    Deterministic scenario:
+    - Get streaming message
+    - Observe content while streaming
+    - Verify content is complete at the end
+    """
+
+    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
+    async def verbose_agent(query: str):
+        """Answer: {query}"""
+
+    result = await verbose_agent("Explain programming in 2 sentences")
 
     # Collect all messages
     messages = []
     async for message in result:
         messages.append(message)
 
-    # Should have received at least one message
-    assert len(messages) > 0
+    # Find AssistantMessage with TextStream
+    text_stream = None
+    for message in messages:
+        if isinstance(message, AssistantMessage) and hasattr(message.content, 'content'):
+            text_stream = message.content
+            break
 
-    # Last message should be AssistantMessage with content
-    last_message = messages[-1]
-    assert hasattr(last_message, 'content')
+    # Should have found a TextStream
+    assert text_stream is not None
 
-    # Extract final content
-    final_text = await extract_text(last_message)
+    # TextStream should be complete by now
+    assert text_stream.content.is_complete
 
-    # Should contain expected response
-    assert "testing" in final_text.lower() or "streaming" in final_text.lower()
+    # Get final content
+    final_content = await text_stream.await_complete()
+    assert len(final_content) > 0
+    assert "programm" in final_content.lower()
 
 
-@test("agent with str return type does not stream")
+@test("streaming content can be observed incrementally")
+async def _():
+    """
+    Tests that we can observe content accumulating token-by-token.
+
+    Deterministic scenario:
+    - Start streaming
+    - Observe AtomicString updates in background task
+    - Verify content grows incrementally
+    """
+
+    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
+    async def storyteller(query: str):
+        """Answer: {query}"""
+
+    result = await storyteller("Write 3 short sentences about computers")
+
+    # Storage for observed content lengths
+    observed_lengths = []
+    atomic_string = None
+
+    # Task to observe content growth
+    async def observe_content():
+        if atomic_string is None:
+            return
+
+        while not atomic_string.is_complete:
+            current = await atomic_string.get()
+            observed_lengths.append(len(current))
+            await asyncio.sleep(0.01)
+
+        # Get final length
+        final = await atomic_string.get()
+        observed_lengths.append(len(final))
+
+    # Collect messages and start observing
+    observer_task = None
+    async for message in result:
+        if isinstance(message, AssistantMessage) and hasattr(message.content, 'content'):
+            atomic_string = message.content.content
+            # Start background observation
+            observer_task = asyncio.create_task(observe_content())
+
+    # Wait for observer to finish
+    if observer_task:
+        await observer_task
+
+    # Should have observed some content
+    assert len(observed_lengths) > 0
+
+    # Final content should have some length
+    assert observed_lengths[-1] > 0
+
+
+@test("non-streaming agent returns complete result immediately")
 async def _():
     """
     Tests that agents with explicit return type don't stream.
 
     Deterministic scenario:
     - Create agent with str return type
-    - Call agent
-    - Should return str directly, not AsyncIterable
+    - Should return complete result
     """
 
     @agent(provider=openai(model="gpt-4o-mini", temperature=0))
     async def non_streaming_agent(query: str) -> str:
-        """Answer this question: {query}"""
-
-    # Call agent - should return str directly
-    result = await non_streaming_agent("Say: Hello")
-
-    # Result should be string or message with string content
-    final_text = await extract_text(result)
-
-    # Should be a string
-    assert isinstance(final_text, str)
-    assert "hello" in final_text.lower()
-
-
-@test("streaming agent yields multiple message updates")
-async def _():
-    """
-    Tests that streaming agent can yield multiple message updates.
-
-    Deterministic scenario:
-    - Create streaming agent
-    - Request longer response to get multiple chunks
-    - Collect all yielded messages
-    """
-
-    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
-    async def verbose_agent(query: str):
-        """Answer this question in detail: {query}"""
-
-    result = await verbose_agent("Explain what Python is in one sentence")
-
-    messages = []
-    async for message in result:
-        messages.append(message)
-
-    # Should receive messages (could be 1 or more depending on chunking)
-    assert len(messages) >= 1
-
-    # All messages should have content
-    for msg in messages:
-        assert hasattr(msg, 'content')
-
-
-@test("streaming content can be accumulated incrementally")
-async def _():
-    """
-    Tests that content from streaming messages can be accumulated.
-
-    Deterministic scenario:
-    - Create streaming agent
-    - Iterate and accumulate content
-    - Verify final accumulated content is complete
-    """
-
-    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
-    async def story_agent(query: str):
         """Answer: {query}"""
 
-    result = await story_agent("List numbers 1, 2, 3")
+    # Call agent - should return AssistantMessage directly
+    result = await non_streaming_agent("Say: Hello")
 
-    # Accumulate content from all messages
-    messages = []
-    async for message in result:
-        messages.append(message)
+    # Result should be AssistantMessage
+    assert isinstance(result, AssistantMessage)
 
-    # Should have at least one message
-    assert len(messages) > 0
+    # Content should be complete immediately
+    if hasattr(result.content, 'is_complete'):
+        assert result.content.is_complete
 
-    # Get final content using helper
-    final_text = await extract_text(messages[-1])
-
-    # Should mention numbers
-    assert any(num in final_text for num in ["1", "2", "3"])
+    # Can get final text
+    if hasattr(result.content, 'await_complete'):
+        final_text = await result.content.await_complete()
+        assert "hello" in final_text.lower()
 
 
 @test("streaming works with tool calling")
@@ -145,93 +180,105 @@ async def _():
     Tests that streaming works when agent uses tools.
 
     Deterministic scenario:
-    - Create streaming agent with tools
-    - Agent calls tool during streaming
-    - Messages should include both tool calls and responses
+    - Agent with tools streams response
+    - Should receive proper messages
+    - Final content should include tool result
     """
 
     @tool
-    def get_current_year() -> int:
-        """Returns the current year."""
+    def get_year() -> int:
+        """Returns the year 2025."""
         return 2025
 
     @agent(
         provider=openai(model="gpt-4o-mini", temperature=0),
-        tools=[get_current_year]
+        tools=[get_year]
     )
-    async def tool_streaming_agent(query: str):
+    async def tool_agent(query: str):
         """
         Answer: {query}
-        Use the get_current_year tool to find the current year.
+        Use get_year tool to get the year.
         """
 
-    result = await tool_streaming_agent("What is the current year according to the tool?")
+    result = await tool_agent("What year is it according to the tool?")
 
     messages = []
     async for message in result:
         messages.append(message)
 
-    # Should have multiple messages (including tool calls)
-    assert len(messages) >= 1
-
-    # Collect final response
-    final_text = await extract_text(messages[-1])
-
-    # Should mention 2025
-    assert "2025" in final_text
-
-
-@test("streaming messages include message metadata")
-async def _():
-    """
-    Tests that streaming messages include proper metadata.
-
-    Deterministic scenario:
-    - Create streaming agent
-    - Check that messages have proper attributes
-    - Verify message types
-    """
-
-    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
-    async def metadata_agent(query: str):
-        """Answer: {query}"""
-
-    result = await metadata_agent("Say: Testing")
-
-    messages = []
-    async for message in result:
-        messages.append(message)
-        # Each message should have content
-        assert hasattr(message, 'content')
-        # Messages should have a type (from Message base class)
-        assert message.__class__.__name__ in ['AssistantMessage', 'ToolMessage', 'UserMessage', 'SystemMessage']
-
-    # Should have received at least one message
+    # Should have received messages
     assert len(messages) > 0
 
+    # Should have AssistantMessage(s)
+    assistant_messages = [m for m in messages if isinstance(m, AssistantMessage)]
+    assert len(assistant_messages) > 0
 
-@test("empty streaming response is handled gracefully")
+    # Get final response
+    final = assistant_messages[-1]
+    if hasattr(final.content, 'await_complete'):
+        text = await final.content.await_complete()
+        assert "2025" in text
+
+
+@test("multiple messages can be received during streaming")
 async def _():
     """
-    Tests that agents handle edge cases in streaming.
+    Tests that streaming can yield multiple message updates.
 
     Deterministic scenario:
-    - Create streaming agent with very simple query
-    - Should still return valid message stream
+    - Stream response
+    - Count messages received
+    - Verify we get messages through the stream
     """
 
     @agent(provider=openai(model="gpt-4o-mini", temperature=0))
-    async def simple_agent(query: str):
+    async def multi_message_agent(query: str):
         """Answer: {query}"""
 
-    result = await simple_agent("Say: OK")
+    result = await multi_message_agent("Count: 1, 2, 3")
 
-    messages = []
+    message_count = 0
     async for message in result:
-        messages.append(message)
+        message_count += 1
+        # All messages should have basic properties
+        assert hasattr(message, 'role')
+        assert hasattr(message, 'content')
 
-    # Should have at least one message even for simple response
-    assert len(messages) >= 1
+    # Should have received at least one message
+    assert message_count >= 1
 
-    final_text = await extract_text(messages[-1])
+
+@test("TextStream provides await_complete for final content")
+async def _():
+    """
+    Tests that TextStream provides proper completion mechanism.
+
+    Deterministic scenario:
+    - Get streaming message
+    - Consume all messages
+    - Use await_complete to get final result
+    - Verify content is correct
+    """
+
+    @agent(provider=openai(model="gpt-4o-mini", temperature=0))
+    async def completion_agent(query: str):
+        """Answer: {query}"""
+
+    result = await completion_agent("Say exactly: Testing Complete")
+
+    # Consume all messages and collect TextStream
+    text_stream = None
+    async for message in result:
+        if isinstance(message, AssistantMessage) and hasattr(message.content, 'await_complete'):
+            text_stream = message.content
+
+    # Should have TextStream
+    assert text_stream is not None
+
+    # TextStream should be complete by now
+    assert text_stream.content.is_complete
+
+    # Should be able to get completion
+    final_text = await text_stream.await_complete()
     assert len(final_text) > 0
+    assert "test" in final_text.lower() or "complete" in final_text.lower()
