@@ -13,7 +13,6 @@ from ward import test, fixture
 
 from liteagent import agent
 from liteagent.providers import openai
-from tests.conftest import extract_text
 
 
 # Fixture to dynamically load built-in tools

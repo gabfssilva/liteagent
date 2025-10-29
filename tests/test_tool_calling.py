@@ -11,7 +11,6 @@ from ward import test
 
 from liteagent import agent, tool
 from liteagent.providers import openai
-from tests.conftest import extract_text
 
 
 class UserProfile(BaseModel):
@@ -40,7 +39,7 @@ def calculate_age_in_days(age_in_years: int) -> int:
 
 
 @test("agent can call a tool and use the returned data")
-async def _():
+async def _(extract_text):
     """
     Tests that agent can call a tool and use the returned data.
 
@@ -70,7 +69,7 @@ async def _():
 
 
 @test("agent can call multiple tools in sequence")
-async def _():
+async def _(extract_text):
     """
     Tests that agent can call multiple tools in sequence.
 
@@ -101,7 +100,7 @@ async def _():
 
 
 @test("agent can call tools with structured parameters")
-async def _():
+async def _(extract_text):
     """
     Tests that agent can call tools with structured parameters.
 

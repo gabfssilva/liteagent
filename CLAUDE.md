@@ -25,29 +25,23 @@ uv sync --group dev --group providers --group vectordb
 ### Running Tests
 
 ```bash
-# Run all tests (with proper PYTHONPATH)
-PYTHONPATH=/home/user/liteagent uv run ward
-
-# Or set PYTHONPATH for the session
-export PYTHONPATH=$(pwd)
+# Run all tests
 uv run ward
 
 # Run specific test file
-PYTHONPATH=$(pwd) uv run ward tests/test_tool_calling.py
+uv run ward tests/test_tool_calling.py
 
 # Run with pytest (alternative, Ward is pytest-compatible)
-PYTHONPATH=$(pwd) uv run pytest tests/
+uv run pytest tests/
 
 # Run with verbose output
-PYTHONPATH=$(pwd) uv run pytest -v tests/
+uv run pytest -v tests/
 ```
 
-**Important**: Set `PYTHONPATH` to avoid import errors with `tests.conftest`.
-
 **Test Coverage**: With `uv sync --group dev`, you get all dependencies for comprehensive testing:
-- **62+ tests pass** (66%+ coverage)
-- Includes: agent teams, builtin tools, error handling, tool calling, structured output, and more
-- Remaining tests may require API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.)
+- **69 tests pass (73.4%)** out of 94 tests
+- Includes: agent teams, builtin tools, error handling, tool calling, structured output, streaming, memoria, sessions, files, and more
+- Remaining 24 failures are mostly due to missing API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.) or optional features
 
 ### Running Examples
 

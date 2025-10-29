@@ -1,24 +1,29 @@
 """
 Shared configurations and fixtures for all tests.
 """
+from ward import fixture
 
 
-async def extract_text(result) -> str:
+@fixture
+async def extract_text():
     """
-    Helper to extract text from different agent return types.
+    Fixture that provides text extraction helper for different agent return types.
 
     Agents can return:
     - str directly
     - Message with content TextStream
     - Message with content str
     """
-    if isinstance(result, str):
-        return result
+    async def _extract(result) -> str:
+        if isinstance(result, str):
+            return result
 
-    if hasattr(result, 'content'):
-        content = result.content
-        if hasattr(content, 'await_complete'):
-            return await content.await_complete()
-        return str(content)
+        if hasattr(result, 'content'):
+            content = result.content
+            if hasattr(content, 'await_complete'):
+                return await content.await_complete()
+            return str(content)
 
-    return str(result)
+        return str(result)
+
+    return _extract
