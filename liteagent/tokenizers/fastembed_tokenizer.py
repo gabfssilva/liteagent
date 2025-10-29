@@ -2,8 +2,10 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import numpy as np
-    from fastembed import TextEmbedding
+else:
+    import numpy as np
 
+from fastembed import TextEmbedding
 from liteagent.tokenizers import Tokenizer
 
 
