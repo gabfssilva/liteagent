@@ -8,6 +8,8 @@ from . import providers
 from .auto_function import auto_function
 from .session import session, Session
 from .bus import bus
+from . import guardrails
+from .guardrails import Guardrail, guardrail, GuardrailContext, GuardrailViolation, InputViolation, OutputViolation
 
 __all__ = [
     "Agent",
@@ -30,5 +32,12 @@ __all__ = [
     "ImageURL",
     "session",
     "Session",
-    'bus'
+    "bus",
+    "guardrails",
+    "Guardrail",
+    "guardrail",
+    "GuardrailContext",
+    "GuardrailViolation",
+    "InputViolation",
+    "OutputViolation",
 ]
