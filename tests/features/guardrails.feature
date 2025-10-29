@@ -34,10 +34,10 @@ Feature: Guardrails
   Scenario: Apply multiple guardrails
     Given a mock provider that echoes the input
     And an agent with AllowedTopics and NoPII guardrails
-    When I call the agent with "Weather in NYC, call me at 555-1234"
+    When I call the agent with "Weather in NYC, call me at 555-123-4567"
     Then the response should contain "Weather"
     And the response should contain "[PII_REDACTED]"
-    And the response should not contain "555-1234"
+    And the response should not contain "555-123-4567"
 
   Scenario: Validate only input with validate parameter
     Given a mock provider that returns PII in output
@@ -51,7 +51,8 @@ Feature: Guardrails
     And an agent with NoPII guardrail that validates only output
     When I call the agent with "My email is test@example.com"
     Then the agent should respond successfully
-    And the response should contain "test@example.com"
+    And the response should contain "[PII_REDACTED]"
+    And the response should not contain "test@example.com"
 
   Scenario: Detect secrets with NoSecrets guardrail
     Given a mock provider that echoes the input

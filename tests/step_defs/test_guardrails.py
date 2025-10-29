@@ -125,8 +125,8 @@ def given_mock_pii_provider(mock_pii_provider):
 @given("an agent with AllowedTopics guardrail for weather topics", target_fixture="test_agent")
 def given_agent_with_allowed_topics(test_provider):
     """Create agent with AllowedTopics guardrail."""
-    @agent(provider=test_provider)
     @guardrail(AllowedTopics(["weather", "forecast", "temperature", "climate"]))
+    @agent(provider=test_provider)
     async def weather_agent(user_input: str) -> str:
         """Respond to: {user_input}"""
     return weather_agent
@@ -135,8 +135,8 @@ def given_agent_with_allowed_topics(test_provider):
 @given("an agent with NoPII guardrail that redacts", target_fixture="test_agent")
 def given_agent_with_nopii_redact(test_provider):
     """Create agent with NoPII guardrail that redacts."""
-    @agent(provider=test_provider)
     @guardrail(NoPII(block_on_detection=False))
+    @agent(provider=test_provider)
     async def safe_agent(user_input: str) -> str:
         """Respond to: {user_input}"""
     return safe_agent
@@ -145,8 +145,8 @@ def given_agent_with_nopii_redact(test_provider):
 @given("an agent with NoPII guardrail that blocks on output", target_fixture="test_agent")
 def given_agent_with_nopii_block_output(test_provider):
     """Create agent with NoPII guardrail that blocks on output."""
-    @agent(provider=test_provider)
     @guardrail(NoPII(block_on_detection=True))
+    @agent(provider=test_provider)
     async def strict_agent(user_input: str) -> str:
         """Respond to: {user_input}"""
     return strict_agent
@@ -155,8 +155,8 @@ def given_agent_with_nopii_block_output(test_provider):
 @given("an agent with NoPromptInjection guardrail", target_fixture="test_agent")
 def given_agent_with_no_prompt_injection(test_provider):
     """Create agent with NoPromptInjection guardrail."""
-    @agent(provider=test_provider)
     @guardrail(NoPromptInjection())
+    @agent(provider=test_provider)
     async def secure_agent(user_input: str) -> str:
         """Respond to: {user_input}"""
     return secure_agent
@@ -165,9 +165,9 @@ def given_agent_with_no_prompt_injection(test_provider):
 @given("an agent with AllowedTopics and NoPII guardrails", target_fixture="test_agent")
 def given_agent_with_multiple_guardrails(test_provider):
     """Create agent with multiple guardrails."""
-    @agent(provider=test_provider)
-    @guardrail(AllowedTopics(["weather", "forecast", "NYC", "climate"]))
     @guardrail(NoPII(block_on_detection=False))
+    @guardrail(AllowedTopics(["weather", "forecast", "NYC", "climate"]))
+    @agent(provider=test_provider)
     async def multi_guarded_agent(user_input: str) -> str:
         """Respond to: {user_input}"""
     return multi_guarded_agent
@@ -176,8 +176,8 @@ def given_agent_with_multiple_guardrails(test_provider):
 @given("an agent with NoPII guardrail that validates only input", target_fixture="test_agent")
 def given_agent_with_nopii_input_only(test_provider):
     """Create agent with NoPII guardrail that validates only input."""
-    @agent(provider=test_provider)
     @guardrail(NoPII(block_on_detection=True), validate=["in"])
+    @agent(provider=test_provider)
     async def input_only_agent(user_input: str) -> str:
         """Respond to: {user_input}"""
     return input_only_agent
@@ -186,8 +186,8 @@ def given_agent_with_nopii_input_only(test_provider):
 @given("an agent with NoPII guardrail that validates only output", target_fixture="test_agent")
 def given_agent_with_nopii_output_only(test_provider):
     """Create agent with NoPII guardrail that validates only output."""
-    @agent(provider=test_provider)
     @guardrail(NoPII(block_on_detection=False), validate=["out"])
+    @agent(provider=test_provider)
     async def output_only_agent(user_input: str) -> str:
         """Respond to: {user_input}"""
     return output_only_agent
@@ -196,8 +196,8 @@ def given_agent_with_nopii_output_only(test_provider):
 @given("an agent with NoSecrets guardrail", target_fixture="test_agent")
 def given_agent_with_no_secrets(test_provider):
     """Create agent with NoSecrets guardrail."""
-    @agent(provider=test_provider)
     @guardrail(NoSecrets())
+    @agent(provider=test_provider)
     async def secret_detecting_agent(user_input: str) -> str:
         """Respond to: {user_input}"""
     return secret_detecting_agent
@@ -206,8 +206,8 @@ def given_agent_with_no_secrets(test_provider):
 @given("an agent with ToxicContent guardrail that redacts", target_fixture="test_agent")
 def given_agent_with_toxic_content_redact(test_provider):
     """Create agent with ToxicContent guardrail that redacts."""
-    @agent(provider=test_provider)
     @guardrail(ToxicContent(block_on_detection=False))
+    @agent(provider=test_provider)
     async def family_friendly_agent(user_input: str) -> str:
         """Respond to: {user_input}"""
     return family_friendly_agent
@@ -216,8 +216,8 @@ def given_agent_with_toxic_content_redact(test_provider):
 @given("a custom guardrail that requires \"please\" in input", target_fixture="test_agent")
 def given_agent_with_custom_guardrail(test_provider):
     """Create agent with custom guardrail."""
-    @agent(provider=test_provider)
     @guardrail(PoliteGuardrail())
+    @agent(provider=test_provider)
     async def polite_agent(user_input: str) -> str:
         """Respond to: {user_input}"""
     return polite_agent
@@ -229,16 +229,22 @@ def when_call_agent(test_agent, user_input):
     """Call the agent with given input."""
     async def run():
         try:
-            # Call agent with stream=True to get async iterator
-            result = await test_agent(user_input, stream=True)
-            # Extract text from response
-            text_parts = []
-            async for message in result:
-                if isinstance(message, AssistantMessage):
-                    if isinstance(message.content, AssistantMessage.TextStream):
-                        text = await message.content.await_complete()
-                        text_parts.append(text)
-            return {"success": True, "text": "".join(text_parts), "exception": None}
+            # Call agent in non-streaming mode to allow output validation
+            result = await test_agent(user_input)
+
+            # Extract text using same logic as conftest extract_text
+            if isinstance(result, str):
+                text = result
+            elif hasattr(result, 'content'):
+                content = result.content
+                if hasattr(content, 'await_complete'):
+                    text = await content.await_complete()
+                else:
+                    text = str(content)
+            else:
+                text = str(result)
+
+            return {"success": True, "text": text, "exception": None}
         except GuardrailViolation as e:
             return {"success": False, "text": None, "exception": e}
 

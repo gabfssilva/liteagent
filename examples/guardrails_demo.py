@@ -20,30 +20,30 @@ from liteagent.providers import openai
 
 
 # Example 1: Topic restriction
-@agent(provider=openai(model="gpt-4o-mini"))
 @guardrail(AllowedTopics(["weather", "climate", "forecast"]))
+@agent(provider=openai(model="gpt-4o-mini"))
 async def weather_bot(user_input: str) -> str:
     """You are a weather assistant. Respond to: {user_input}"""
 
 
 # Example 2: PII redaction
-@agent(provider=openai(model="gpt-4o-mini"))
 @guardrail(NoPII(block_on_detection=False))  # Redact instead of block
+@agent(provider=openai(model="gpt-4o-mini"))
 async def safe_bot(user_input: str) -> str:
     """You are a helpful assistant. Respond to: {user_input}"""
 
 
 # Example 3: Multiple guardrails
-@agent(provider=openai(model="gpt-4o-mini"))
-@guardrail(NoPromptInjection())  # Block prompt injection
 @guardrail(NoPII(block_on_detection=False))  # Redact PII
+@guardrail(NoPromptInjection())  # Block prompt injection
+@agent(provider=openai(model="gpt-4o-mini"))
 async def secure_bot(user_input: str) -> str:
     """You are a secure assistant. Respond to: {user_input}"""
 
 
 # Example 4: Input-only validation
-@agent(provider=openai(model="gpt-4o-mini"))
 @guardrail(NoPII(), validate=["in"])  # Only validate input
+@agent(provider=openai(model="gpt-4o-mini"))
 async def input_filtered_bot(user_input: str) -> str:
     """You are a helpful assistant. Respond to: {user_input}"""
 
@@ -73,8 +73,8 @@ class ProfanityFilter(Guardrail):
         return result
 
 
-@agent(provider=openai(model="gpt-4o-mini"))
 @guardrail(ProfanityFilter(["damn", "hell"]))
+@agent(provider=openai(model="gpt-4o-mini"))
 async def family_friendly_bot(user_input: str) -> str:
     """You are a family-friendly assistant. Respond to: {user_input}"""
 

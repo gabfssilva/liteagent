@@ -132,7 +132,7 @@ class NoSecrets(Guardrail):
         "bearer_token": r"(?i)bearer\s+([a-zA-Z0-9_\-\.]{20,})",
         "aws_key": r"(?i)(AKIA[0-9A-Z]{16})",
         "github_token": r"(?i)(ghp_[a-zA-Z0-9]{36})",
-        "openai_key": r"(?i)(sk-[a-zA-Z0-9]{48})",
+        "openai_key": r"(?i)(sk-[a-zA-Z0-9]{20,})",  # Changed to 20+ chars instead of exactly 48
         "password": r"(?i)(password|passwd|pwd)\s*[:=]\s*['\"]?([^\s'\"]{8,})['\"]?",
     }
 

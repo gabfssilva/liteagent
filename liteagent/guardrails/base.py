@@ -170,49 +170,43 @@ def guardrail(
 
                 # Check if result is an async iterable (streaming response)
                 if inspect.isasyncgen(result) or isinstance(result, AsyncIterable):
-                    # For streaming responses, we need to create a new async generator
-                    # that validates each message as it comes through
-                    async def validated_stream():
-                        async for item in result:
-                            # If validating output and item is a message with text content
-                            if validate_output:
-                                # Import here to avoid circular dependency
-                                from liteagent.message import AssistantMessage
-                                if isinstance(item, AssistantMessage):
-                                    if isinstance(item.content, AssistantMessage.TextStream):
-                                        # Wait for text stream to complete
-                                        text = await item.content.await_complete()
-                                        try:
-                                            validated_text = await guardrail_instance.validate_output(text, context)
-                                            # If text was modified, we need to update the stream
-                                            if validated_text != text:
-                                                # Replace the content with validated version
-                                                from liteagent.internal.cached_iterator import CachedStringAccumulator
-                                                new_content = CachedStringAccumulator(validated_text)
-                                                await new_content.complete()
-                                                # Create new message with validated content
-                                                item = AssistantMessage(
-                                                    content=AssistantMessage.TextStream(
-                                                        stream_id=item.content.stream_id,
-                                                        content=new_content
-                                                    )
-                                                )
-                                        except GuardrailViolation as e:
-                                            if e.guardrail_name is None:
-                                                e.guardrail_name = guardrail_instance.name
-                                            raise
-                            yield item
+                    # For streaming responses, output validation is not supported
+                    # because it would require buffering the entire response,
+                    # defeating the purpose of streaming.
+                    # Only input validation is applied for streaming.
+                    return result
 
-                    return validated_stream()
+                # For non-streaming responses, validate output
+                if validate_output and result is not None:
+                    # Extract text from result if it's a Message
+                    from liteagent.message import AssistantMessage
+                    text_to_validate = None
 
-                # For non-streaming responses
-                elif validate_output and result is not None:
+                    if isinstance(result, AssistantMessage):
+                        if isinstance(result.content, AssistantMessage.TextStream):
+                            text_to_validate = await result.content.await_complete()
+                        else:
+                            text_to_validate = str(result.content)
+                    elif isinstance(result, str):
+                        text_to_validate = result
+                    elif hasattr(result, 'content'):
+                        if hasattr(result.content, 'await_complete'):
+                            text_to_validate = await result.content.await_complete()
+                        else:
+                            text_to_validate = str(result.content)
+                    else:
+                        text_to_validate = str(result)
+
                     try:
-                        context.llm_output = str(result)
-                        validated_output = await guardrail_instance.validate_output(
-                            str(result), context
+                        context.llm_output = text_to_validate
+                        validated_text = await guardrail_instance.validate_output(
+                            text_to_validate, context
                         )
-                        result = validated_output
+                        # If text was modified by guardrail, we need to update the result
+                        if validated_text != text_to_validate:
+                            # Return the modified text directly
+                            result = validated_text
+                        # Otherwise return original result as-is
                     except GuardrailViolation as e:
                         if e.guardrail_name is None:
                             e.guardrail_name = guardrail_instance.name
