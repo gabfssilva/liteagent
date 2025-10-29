@@ -1,11 +1,27 @@
 """
-Shared configurations and fixtures for all tests.
+Shared configurations and fixtures for all BDD tests.
 """
-from ward import fixture
+import asyncio
+import functools
+from typing import Any, Callable
+from pytest import fixture
+
+
+def async_to_sync(fn: Callable) -> Callable:
+    """
+    Wrapper to convert async functions to sync for pytest-bdd compatibility.
+
+    pytest-bdd doesn't play well with @pytest.mark.asyncio, so we wrap
+    async operations with asyncio.run() to execute them synchronously.
+    """
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        return asyncio.run(fn(*args, **kwargs))
+    return wrapper
 
 
 @fixture
-async def extract_text():
+def extract_text():
     """
     Fixture that provides text extraction helper for different agent return types.
 
@@ -27,3 +43,14 @@ async def extract_text():
         return str(result)
 
     return _extract
+
+
+@fixture
+def run_async():
+    """
+    Fixture that provides a helper to run async functions in sync context.
+    Usage: run_async(some_async_function(args))
+    """
+    def _run(coro):
+        return asyncio.run(coro)
+    return _run

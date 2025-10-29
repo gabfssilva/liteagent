@@ -127,6 +127,10 @@ dev = [
     "importtime>=1.0.3.2",
     "docker>=7.1.0",
     "ward>=0.68.0b0",
+    "pytest>=8.0.0",
+    "pytest-bdd>=8.1.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-html>=4.1.1",
     # core
     "aiocache>=0.12.3",
     "rich>=13.9.4",
