@@ -14,3 +14,33 @@ wheels/
 .venv
 
 .knowledge/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Sensitive files
+*secret*
+*credentials*
+.password
+
+# Editor and OS files
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/settings.json
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
