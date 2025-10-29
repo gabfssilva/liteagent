@@ -13,7 +13,7 @@ from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
 from liteagent import Tool, Provider
 from liteagent.codec import to_json_str
 from liteagent.message import Message, SystemMessage, UserMessage, ImageURL, ImagePath, ToolMessage, AssistantMessage
-from liteagent.internal.atomic_string import AtomicString
+from liteagent.internal.cached_iterator import CachedStringAccumulator
 
 
 class OpenAICompatible(Provider):
@@ -44,6 +44,7 @@ class OpenAICompatible(Provider):
         oai_messages = list(filter(lambda m: m is not None, oai_messages))
 
         cache: dict = {}
+        cache['respond_as'] = respond_as  # Store respond_as in cache for later use
 
         try:
             async with self.client.beta.chat.completions.stream(
@@ -59,7 +60,7 @@ class OpenAICompatible(Provider):
                         yield message
         finally:
             for key, value in list(cache.items()):
-                if isinstance(value, AtomicString) and not value.is_complete:
+                if isinstance(value, CachedStringAccumulator) and not value.is_complete:
                     await value.complete()
 
     @staticmethod
@@ -72,10 +73,10 @@ class OpenAICompatible(Provider):
                     ]
                 )
             ) if content != "":
-                content_stream: AtomicString | None = cache.get("assistant_stream", None)
+                content_stream: CachedStringAccumulator | None = cache.get("assistant_stream", None)
 
                 if not content_stream:
-                    content_stream = AtomicString(content)
+                    content_stream = CachedStringAccumulator(content)
                     cache["assistant_stream"] = content_stream
 
                     return AssistantMessage(content=AssistantMessage.TextStream(
@@ -87,9 +88,28 @@ class OpenAICompatible(Provider):
                     return None
 
             case ContentDoneEvent():
+                import json
+                from pydantic import BaseModel
+
+                # Check if we have a respond_as type and an assistant_stream with JSON content
+                respond_as = cache.get('respond_as')
+                assistant_stream = cache.get('assistant_stream')
+
+                # Complete all streams
                 for key in list(cache.keys()):
-                    tool_stream = cache.pop(key)
-                    await tool_stream.complete()
+                    if key not in ['respond_as'] and isinstance(cache[key], CachedStringAccumulator):
+                        tool_stream = cache.pop(key)
+                        await tool_stream.complete()
+
+                # If we have structured output, parse it and return as the Pydantic type
+                if respond_as and assistant_stream and isinstance(respond_as, type) and issubclass(respond_as, BaseModel):
+                    json_content = await assistant_stream.await_complete()
+                    try:
+                        parsed_obj = respond_as.model_validate_json(json_content)
+                        return AssistantMessage(content=parsed_obj)
+                    except Exception as e:
+                        # If parsing fails, fall back to returning the text
+                        pass
 
                 return None
 
@@ -98,15 +118,15 @@ class OpenAICompatible(Provider):
                 index=index,
                 arguments=arguments,
             ):
-                content_stream: AtomicString | None = cache.pop("assistant_stream", None)
+                content_stream: CachedStringAccumulator | None = cache.pop("assistant_stream", None)
 
                 if content_stream:
                     await content_stream.complete()
 
-                tool_stream: AtomicString | None = cache.get(f"tool_stream-{name}-{index}", None)
+                tool_stream: CachedStringAccumulator | None = cache.get(f"tool_stream-{name}-{index}", None)
 
                 if not tool_stream:
-                    tool_stream = AtomicString(arguments)
+                    tool_stream = CachedStringAccumulator(arguments)
 
                     cache[f"tool_stream-{name}-{index}"] = tool_stream
 
@@ -124,23 +144,23 @@ class OpenAICompatible(Provider):
                 index=index,
                 arguments=arguments,
             ):
-                content_stream: AtomicString | None = cache.pop("assistant_stream", None)
+                content_stream: CachedStringAccumulator | None = cache.pop("assistant_stream", None)
 
                 if content_stream:
                     await content_stream.complete()
 
-                tool_stream: AtomicString | None = cache.pop(f"tool_stream-{name}-{index}", None)
+                tool_stream: CachedStringAccumulator | None = cache.pop(f"tool_stream-{name}-{index}", None)
 
                 if tool_stream:
                     await tool_stream.set(arguments)
                     await tool_stream.complete()
                     return None
                 else:
-                    atomic_string = AtomicString(arguments, True)
+                    cached_accumulator = CachedStringAccumulator(arguments, True)
                     return AssistantMessage(content=AssistantMessage.ToolUseStream(
                         tool_use_id=f'{uuid.uuid4()}',
                         name=name,
-                        arguments=atomic_string
+                        arguments=cached_accumulator
                     ))
 
             case _:
