@@ -38,6 +38,8 @@ uv run pytest tests/
 uv run pytest -v tests/
 ```
 
+**Note**: With `uv sync --group dev`, core tests (sessions, streaming, memoria, files) will pass. Some tests for optional tools (yfinance, browser, etc.) will fail - this is expected. To run all tests, install optional groups as needed.
+
 ### Running Examples
 
 ```bash
