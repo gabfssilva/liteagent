@@ -25,7 +25,7 @@ uv sync --group dev --group providers --group vectordb
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (automatically uses parallel execution)
 uv run ward
 
 # Run specific test file
@@ -36,6 +36,16 @@ uv run pytest tests/
 
 # Run with verbose output
 uv run pytest -v tests/
+
+# Parallel execution (configured by default via pytest.ini)
+# Tests run in parallel using pytest-xdist with -n auto
+# The number of workers is automatically determined by CPU count
+
+# Override parallel workers (e.g., 4 workers)
+uv run pytest -n 4 tests/
+
+# Disable parallel execution (run serially)
+uv run pytest -n 0 tests/
 ```
 
 ### Running Examples
