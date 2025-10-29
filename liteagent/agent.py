@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from liteagent.provider import Provider
 from .message import Message, UserMessage, Image, AssistantMessage, ToolMessage, SystemMessage
-from .internal.atomic_string import AtomicString
+from .internal.cached_iterator import CachedStringAccumulator
 from .prompts import TOOL_AGENT_PROMPT
 from .tool import Tool, ToolDef
 from .bus import EventBus, create_bus
@@ -385,7 +385,7 @@ class Agent[Out]:
             tool_stream = AssistantMessage.ToolUseStream(
                 tool_use_id=f'{tool_id}',
                 name=tool.name,
-                arguments=AtomicString(json.dumps({}))
+                arguments=CachedStringAccumulator(json.dumps({}))
             )
             await tool_stream.complete()  # Mark it as complete immediately
 

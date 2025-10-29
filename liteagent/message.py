@@ -9,7 +9,7 @@ from typing import Literal
 import aiofiles
 
 from liteagent.codec import JsonValue, to_json, JsonLike, JsonObject, JsonNull
-from liteagent.internal.atomic_string import AtomicString
+from liteagent.internal.cached_iterator import CachedStringAccumulator
 
 
 @dataclass
@@ -110,11 +110,11 @@ class AssistantMessage(Message):
     @dataclass(kw_only=True, eq=True)
     class TextStream:
         stream_id: str
-        content: AtomicString
+        content: CachedStringAccumulator
 
         def __post_init__(self):
-            if not isinstance(self.content, AtomicString):
-                self.content = AtomicString(str(self.content))
+            if not isinstance(self.content, CachedStringAccumulator):
+                self.content = CachedStringAccumulator(str(self.content))
 
         async def append(self, text: str):
             await self.content.append(text)
@@ -143,15 +143,15 @@ class AssistantMessage(Message):
     class ToolUseStream:
         tool_use_id: str
         name: str
-        arguments: AtomicString
+        arguments: CachedStringAccumulator
 
         from liteagent import Tool
 
         tool: 'Tool' = field(init=False)
 
         def __post_init__(self):
-            if not isinstance(self.arguments, AtomicString):
-                self.arguments = AtomicString(
+            if not isinstance(self.arguments, CachedStringAccumulator):
+                self.arguments = CachedStringAccumulator(
                     json.dumps(self.arguments) if not isinstance(self.arguments, str) else self.arguments)
 
         async def append_arguments(self, arg_text: str):

@@ -13,7 +13,7 @@ from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
 from liteagent import Tool, Provider
 from liteagent.codec import to_json_str
 from liteagent.message import Message, SystemMessage, UserMessage, ImageURL, ImagePath, ToolMessage, AssistantMessage
-from liteagent.internal.atomic_string import AtomicString
+from liteagent.internal.cached_iterator import CachedStringAccumulator
 
 
 class OpenAICompatible(Provider):
@@ -60,7 +60,7 @@ class OpenAICompatible(Provider):
                         yield message
         finally:
             for key, value in list(cache.items()):
-                if isinstance(value, AtomicString) and not value.is_complete:
+                if isinstance(value, CachedStringAccumulator) and not value.is_complete:
                     await value.complete()
 
     @staticmethod
@@ -73,10 +73,10 @@ class OpenAICompatible(Provider):
                     ]
                 )
             ) if content != "":
-                content_stream: AtomicString | None = cache.get("assistant_stream", None)
+                content_stream: CachedStringAccumulator | None = cache.get("assistant_stream", None)
 
                 if not content_stream:
-                    content_stream = AtomicString(content)
+                    content_stream = CachedStringAccumulator(content)
                     cache["assistant_stream"] = content_stream
 
                     return AssistantMessage(content=AssistantMessage.TextStream(
@@ -97,7 +97,7 @@ class OpenAICompatible(Provider):
 
                 # Complete all streams
                 for key in list(cache.keys()):
-                    if key not in ['respond_as'] and isinstance(cache[key], AtomicString):
+                    if key not in ['respond_as'] and isinstance(cache[key], CachedStringAccumulator):
                         tool_stream = cache.pop(key)
                         await tool_stream.complete()
 
@@ -118,15 +118,15 @@ class OpenAICompatible(Provider):
                 index=index,
                 arguments=arguments,
             ):
-                content_stream: AtomicString | None = cache.pop("assistant_stream", None)
+                content_stream: CachedStringAccumulator | None = cache.pop("assistant_stream", None)
 
                 if content_stream:
                     await content_stream.complete()
 
-                tool_stream: AtomicString | None = cache.get(f"tool_stream-{name}-{index}", None)
+                tool_stream: CachedStringAccumulator | None = cache.get(f"tool_stream-{name}-{index}", None)
 
                 if not tool_stream:
-                    tool_stream = AtomicString(arguments)
+                    tool_stream = CachedStringAccumulator(arguments)
 
                     cache[f"tool_stream-{name}-{index}"] = tool_stream
 
@@ -144,23 +144,23 @@ class OpenAICompatible(Provider):
                 index=index,
                 arguments=arguments,
             ):
-                content_stream: AtomicString | None = cache.pop("assistant_stream", None)
+                content_stream: CachedStringAccumulator | None = cache.pop("assistant_stream", None)
 
                 if content_stream:
                     await content_stream.complete()
 
-                tool_stream: AtomicString | None = cache.pop(f"tool_stream-{name}-{index}", None)
+                tool_stream: CachedStringAccumulator | None = cache.pop(f"tool_stream-{name}-{index}", None)
 
                 if tool_stream:
                     await tool_stream.set(arguments)
                     await tool_stream.complete()
                     return None
                 else:
-                    atomic_string = AtomicString(arguments, True)
+                    cached_accumulator = CachedStringAccumulator(arguments, True)
                     return AssistantMessage(content=AssistantMessage.ToolUseStream(
                         tool_use_id=f'{uuid.uuid4()}',
                         name=name,
-                        arguments=atomic_string
+                        arguments=cached_accumulator
                     ))
 
             case _:

@@ -45,7 +45,7 @@ async def _():
 
     # Check that content is TextStream (indicates streaming capability)
     first_assistant = assistant_messages[0]
-    assert hasattr(first_assistant.content, 'content')  # Has AtomicString
+    assert hasattr(first_assistant.content, 'content')  # Has CachedStringAccumulator
     assert hasattr(first_assistant.content, 'await_complete')  # Can wait for completion
 
 
@@ -97,7 +97,7 @@ async def _():
 
     Deterministic scenario:
     - Start streaming
-    - Observe AtomicString updates in background task
+    - Observe cached iterator updates in background task
     - Verify content grows incrementally
     """
 
