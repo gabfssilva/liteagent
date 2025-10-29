@@ -39,7 +39,7 @@ def calculate_age_in_days(age_in_years: int) -> int:
 
 
 @test("agent can call a tool and use the returned data")
-async def _(extract_text):
+async def test_agent_can_call_tool(extract_text):
     """
     Tests that agent can call a tool and use the returned data.
 
@@ -69,7 +69,7 @@ async def _(extract_text):
 
 
 @test("agent can call multiple tools in sequence")
-async def _(extract_text):
+async def test_agent_can_call_multiple_tools(extract_text):
     """
     Tests that agent can call multiple tools in sequence.
 
@@ -100,7 +100,7 @@ async def _(extract_text):
 
 
 @test("agent can call tools with structured parameters")
-async def _(extract_text):
+async def test_agent_can_call_tools_with_params(extract_text):
     """
     Tests that agent can call tools with structured parameters.
 
