@@ -1,11 +1,10 @@
 import asyncio
 
-from liteagent import agent, chat
+from liteagent import agent
 from liteagent.providers import openai, deepseek
 from liteagent.tools import browser, vision
 
 
-@chat.terminal
 @agent(
     provider=deepseek(),
     tools=[browser, vision(provider=openai(model='gpt-4.1'))],

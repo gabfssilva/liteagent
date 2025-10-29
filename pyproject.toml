@@ -121,13 +121,6 @@ email = [
     "aiosmtpd>=1.4.6",
 ]
 
-ui = [
-    "art>=6.5",
-    "getchlib>=1.1.2",
-    "textual>=3.1.0",
-    "textual-dev>=1.7.0",
-]
-
 dev = [
     "import-tracker>=3.2.1",
     "importtime>=1.0.3.2",
@@ -173,10 +166,6 @@ chat = [
     "aiocache>=0.12.3",
     "rich>=13.9.4",
     "pyyaml>=6.0.2",
-    "art>=6.5",
-    "getchlib>=1.1.2",
-    "textual>=3.1.0",
-    "textual-dev>=1.7.0",
 ]
 
 basic = [
@@ -229,11 +218,6 @@ full = [
     "openmeteopy",
     # email
     "aiosmtpd>=1.4.6",
-    # ui
-    "art>=6.5",
-    "getchlib>=1.1.2",
-    "textual>=3.1.0",
-    "textual-dev>=1.7.0",
     "atlassian-python-api>=4.0.3",
     "joblib>=1.4.2",
     "pydoll-python>=1.7.0",
@@ -275,10 +259,6 @@ all = [
     "yfinance>=0.2.54",
     "openmeteopy",
     "aiosmtpd>=1.4.6",
-    "art>=6.5",
-    "getchlib>=1.1.2",
-    "textual>=3.1.0",
-    "textual-dev>=1.7.0",
     # dev
     "import-tracker>=3.2.1",
     "importtime>=1.0.3.2",
@@ -287,8 +267,6 @@ all = [
     "joblib>=1.4.2",
     "pydoll-python>=1.7.0",
     "playwright>=1.51.0",
-    "plotext>=5.3.2",
-    "textual-plotext>=1.0.1",
 ]
 pydoll = [
     "pydoll-python>=1.7.0",

@@ -3,13 +3,12 @@ import os
 
 from atlassian import Confluence, Jira
 
-from liteagent import agent, chat
+from liteagent import agent
 from liteagent.providers import openai
 from liteagent.tools import confluence, jira, files
 
 from liteagent import tools
 
-@chat.terminal(logo="Atlassian")
 @agent(
     tools=[
         files(folder=".knowledge"),

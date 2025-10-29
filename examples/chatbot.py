@@ -1,6 +1,6 @@
 import asyncio
 
-from liteagent import agent, chat
+from liteagent import agent
 from liteagent.providers import openai, deepseek
 from liteagent.tools import duckduckgo, vision
 
@@ -17,7 +17,6 @@ async def story_evaluator() -> str: pass
 async def viewer() -> str: pass
 
 
-@chat.terminal(logo="Chatbot")
 @agent(provider=openai(), team=[searcher, viewer, story_evaluator])
 async def chatbot() -> str: pass
 

@@ -1,7 +1,7 @@
 import asyncio
 from typing import List, TypedDict
 
-from liteagent import agent, chat
+from liteagent import agent
 from liteagent.providers import openai, deepseek
 from liteagent.tools import duckduckgo, wikipedia, browser
 
@@ -98,9 +98,6 @@ async def counterfactual_agent(
 async def deep_search_coordinator(): pass
 
 
-@chat.terminal(
-    logo="Executive Meta-Agent"
-)
 @agent(
     provider=openai(model="gpt-4.1"),
     team=[deep_search_coordinator],
