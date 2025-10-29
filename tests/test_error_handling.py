@@ -15,11 +15,10 @@ from ward import test
 
 from liteagent import agent, tool
 from liteagent.providers import openai
-from tests.conftest import extract_text
 
 
 @test("tool that raises exception is handled gracefully")
-async def _():
+async def _(extract_text):
     """
     Tests that when a tool raises an exception, the agent handles it gracefully.
 
@@ -54,7 +53,7 @@ async def _():
 
 
 @test("tool with invalid parameter types fails gracefully")
-async def _():
+async def _(extract_text):
     """
     Tests that tools with wrong parameter types are handled.
 
@@ -90,7 +89,7 @@ async def _():
 
 
 @test("invalid API key raises import error with helpful message")
-async def _():
+async def _(extract_text):
     """
     Tests that invalid/missing API key configuration raises proper error.
 
@@ -120,7 +119,7 @@ async def _():
 
 
 @test("tool with missing required parameter shows clear error")
-async def _():
+async def _(extract_text):
     """
     Tests that missing required parameters are caught.
 
@@ -155,7 +154,7 @@ async def _():
 
 
 @test("agent handles network timeout gracefully")
-async def _():
+async def _(extract_text):
     """
     Tests that network timeouts are handled gracefully.
 
@@ -186,7 +185,7 @@ async def _():
 
 
 @test("multiple tool errors in sequence are handled")
-async def _():
+async def _(extract_text):
     """
     Tests that multiple tool failures don't break the agent.
 
@@ -228,7 +227,7 @@ async def _():
 
 
 @test("invalid structured output format is handled")
-async def _():
+async def _(extract_text):
     """
     Tests that malformed structured output is caught.
 

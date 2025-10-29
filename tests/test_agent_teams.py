@@ -11,11 +11,10 @@ from ward import test
 
 from liteagent import agent, tool
 from liteagent.providers import openai
-from tests.conftest import extract_text
 
 
 @test("coordinator can delegate tasks to specialists")
-async def _():
+async def _(extract_text):
     """
     Tests that a coordinator agent can delegate tasks to specialists.
 
@@ -64,7 +63,7 @@ async def _():
 
 
 @test("coordinator orchestrates multiple specialized specialists")
-async def _():
+async def _(extract_text):
     """
     Tests coordinator with multiple specialized specialists.
 
@@ -134,7 +133,7 @@ async def _():
 
 
 @test("teams work with structured output")
-async def _():
+async def _(extract_text):
     """
     Tests that teams work with structured output.
 
