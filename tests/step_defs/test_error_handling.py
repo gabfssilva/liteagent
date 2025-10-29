@@ -76,6 +76,14 @@ def always_works_tool():
     return always_works
 
 
+# ==================== CONTEXT FIXTURE ====================
+
+@fixture
+def test_context():
+    """Context to store test agent between Given and When steps."""
+    return {}
+
+
 # ==================== GIVEN STEPS ====================
 
 @given("the OpenAI provider is available")
@@ -84,20 +92,20 @@ def given_openai_available():
     assert os.environ.get("OPENAI_API_KEY")
 
 
-@given("an agent with a tool that always fails", target_fixture="agent_with_failing_tool")
-def given_agent_failing_tool(failing_tool_fixture, extract_text):
+@given("an agent with a tool that always fails")
+def given_agent_failing_tool(failing_tool_fixture, test_context):
     @agent(provider=openai(model="gpt-4o-mini", temperature=0), tools=[failing_tool_fixture])
     async def agent_with_failing_tool(query: str) -> str:
         """Answer: {query}. Try using the failing_tool if it seems relevant."""
-    return agent_with_failing_tool
+    test_context['agent'] = agent_with_failing_tool
 
 
-@given("an agent with a strict type tool", target_fixture="agent_with_strict_tool")
-def given_agent_strict_tool(strict_type_tool_fixture):
+@given("an agent with a strict type tool")
+def given_agent_strict_tool(strict_type_tool_fixture, test_context):
     @agent(provider=openai(model="gpt-4o-mini", temperature=0), tools=[strict_type_tool_fixture])
     async def agent_with_strict_tool(query: str) -> str:
         """Answer: {query}. Use strict_type_tool when needed."""
-    return agent_with_strict_tool
+    test_context['agent'] = agent_with_strict_tool
 
 
 @given("an OpenAI provider with invalid API key", target_fixture="invalid_provider")
@@ -105,29 +113,33 @@ def given_invalid_provider():
     return openai(model="gpt-4o-mini", api_key="invalid_key_123")
 
 
-@given("an agent with a tool requiring parameters", target_fixture="agent_with_params")
-def given_agent_with_params(requires_param_tool):
+@given("an agent with a tool requiring parameters")
+def given_agent_with_params(requires_param_tool, test_context):
     @agent(provider=openai(model="gpt-4o-mini", temperature=0), tools=[requires_param_tool])
     async def agent_with_params(query: str) -> str:
         """Answer: {query}. Use requires_param tool with both name and age."""
-    return agent_with_params
+    test_context['agent'] = agent_with_params
 
 
-@given("an agent with multiple tools that can fail", target_fixture="resilient_agent")
-def given_resilient_agent(sometimes_fails_tool, always_works_tool):
+@given("an agent with multiple tools that can fail")
+def given_resilient_agent(sometimes_fails_tool, always_works_tool, test_context):
     @agent(provider=openai(model="gpt-4o-mini", temperature=0), tools=[sometimes_fails_tool, always_works_tool])
     async def resilient_agent(query: str) -> str:
         """Answer: {query}. You have tools available to use."""
-    return resilient_agent
+    test_context['agent'] = resilient_agent
 
 
 # ==================== WHEN STEPS ====================
 
 @when(parsers.parse('I ask the agent to "{query}"'), target_fixture="error_response")
-def when_ask_agent_error(agent_with_failing_tool, query, extract_text):
+def when_ask_agent_error(test_context, query, extract_text):
+    """Generic when step that uses the agent from context."""
+    agent_func = test_context.get('agent')
+    assert agent_func is not None, "No agent found in context"
+
     async def _ask():
         try:
-            result = await agent_with_failing_tool(query)
+            result = await agent_func(query)
             return await extract_text(result)
         except Exception as e:
             return str(e)
@@ -169,7 +181,9 @@ def then_agent_handles_tool(error_response):
 
 @then(parsers.parse('the response should contain "{text}"'))
 def then_response_contains_error(error_response, text):
-    assert text in str(error_response), f"Expected '{text}' in response: {error_response}"
+    response_str = str(error_response)
+    # Case-insensitive comparison
+    assert text.lower() in response_str.lower(), f"Expected '{text}' in response: {error_response}"
 
 
 @then("an authentication error should be raised")

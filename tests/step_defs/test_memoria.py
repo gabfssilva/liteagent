@@ -129,10 +129,20 @@ def when_store_memory(test_memoria, memoria_context, content, mem_type):
 
 @when("I store multiple memories:", target_fixture="store_result")
 def when_store_multiple_memories(test_memoria, memoria_context, datatable):
+    """Store multiple memories from a datatable.
+
+    The datatable is passed as Sequence[Sequence[object]] where:
+    - First row contains headers (e.g., ["content", "type"])
+    - Subsequent rows contain data values
+    """
     async def _store():
         entries = []
-        for row in datatable:
-            entries.append(MemoryEntry(content=row['content'], type=row['type']))
+        # First row is headers, subsequent rows are data
+        headers = datatable[0]
+        for row in datatable[1:]:
+            # Convert row to dict using headers
+            row_dict = dict(zip(headers, row))
+            entries.append(MemoryEntry(content=row_dict['content'], type=row_dict['type']))
         result = await test_memoria.store.handler(test_memoria, memories=entries)
         memoria_context['store_result'] = result
         return result
@@ -309,9 +319,13 @@ def then_retrieving_shows_content(test_memoria, memoria_context, memory_id, expe
 
 
 @then(parsers.parse('the update should return "{expected}"'))
-@then(parsers.parse('the delete should return "{expected}"'))
-def then_operation_returns(update_result, expected):
+def then_update_returns(update_result, expected):
     assert expected.lower() in str(update_result).lower()
+
+
+@then(parsers.parse('the delete should return "{expected}"'))
+def then_delete_returns(delete_result, expected):
+    assert expected.lower() in str(delete_result).lower()
 
 
 @then("the delete should succeed")

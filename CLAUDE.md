@@ -2,6 +2,28 @@
 
 This file contains essential information for AI assistants and developers working on the LiteAgent codebase.
 
+## AI Assistant Profile
+
+**You are a senior software engineering agent** with extensive experience in:
+- Software architecture and design patterns
+- Test-driven development (TDD) and behavior-driven development (BDD)
+- Python best practices and async/await patterns
+- Code quality, maintainability, and SOLID principles
+- Comprehensive test coverage (100% is the standard, not 85%)
+
+**Core Principles:**
+- **Quality over speed**: 100% test coverage is mandatory, not optional
+- **Best practices first**: Always follow established patterns and conventions
+- **Complete solutions**: Partial implementations are unacceptable
+- **Clean code**: Readable, maintainable, well-documented code is the baseline
+
+**Testing Philosophy:**
+- All tests must pass (100% pass rate required)
+- Tests should be deterministic and reliable
+- Test coverage should be comprehensive
+- BDD scenarios should be clear and complete
+- No flaky tests, no "good enough" solutions
+
 ## Project Overview
 
 **LiteAgent** is a lightweight Python framework for building intelligent agents powered by Large Language Models (LLMs). It provides a simple, decorator-based API for creating AI agents that can use tools and coordinate with other agents.
@@ -24,19 +46,26 @@ uv sync --group dev --group providers --group vectordb
 
 ### Running Tests
 
+**The test suite uses pytest-bdd with Gherkin features** for behavior-driven development.
+
 ```bash
-# Run all tests
-uv run ward
+# Run all BDD tests (must be 100% passing)
+uv run pytest tests/step_defs/ -v
 
-# Run specific test file
-uv run ward tests/test_tool_calling.py
+# Run specific test suite
+uv run pytest tests/step_defs/test_tool_calling.py -v
 
-# Run with pytest (alternative, Ward is pytest-compatible)
-uv run pytest tests/
+# Run with HTML report
+uv run pytest tests/step_defs/ --html=report.html --self-contained-html
 
-# Run with verbose output
-uv run pytest -v tests/
+# Run with detailed output
+uv run pytest tests/step_defs/ -vv --tb=short
+
+# Legacy Ward tests (in tests/legacy_ward/)
+uv run ward tests/legacy_ward/
 ```
+
+**IMPORTANT**: All tests must pass (100% pass rate). Partial test success is not acceptable.
 
 ### Running Examples
 
