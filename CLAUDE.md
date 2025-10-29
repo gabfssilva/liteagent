@@ -38,11 +38,6 @@ uv run pytest tests/
 uv run pytest -v tests/
 ```
 
-**Test Coverage**: With `uv sync --group dev`, you get all dependencies for comprehensive testing:
-- **69 tests pass (73.4%)** out of 94 tests
-- Includes: agent teams, builtin tools, error handling, tool calling, structured output, streaming, memoria, sessions, files, and more
-- Remaining 24 failures are mostly due to missing API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.) or optional features
-
 ### Running Examples
 
 ```bash
