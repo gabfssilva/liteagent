@@ -31,15 +31,6 @@ async def hello_agent() -> str:
     """
 
 
-async def main():
-    result = await hello_agent()
-    # Extract text from AssistantMessage
-    if hasattr(result, 'content') and hasattr(result.content, 'await_complete'):
-        text = await result.content.await_complete()
-        print(text)
-    else:
-        print(result)
-
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    result = asyncio.run(hello_agent())
+    print(result)

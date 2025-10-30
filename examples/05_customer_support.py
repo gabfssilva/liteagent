@@ -71,14 +71,13 @@ async def run_support_session():
         async for response in chat(user_message):
             messages_list.append(response)
 
-        # Get the last assistant message
+        # Get the last assistant message and extract text
         for response in reversed(messages_list):
             if response.role == "assistant":
+                # Extract text from AssistantMessage.TextStream
                 if hasattr(response.content, 'await_complete'):
-                    content = await response.content.await_complete()
-                else:
-                    content = str(response.content)
-                print(f"Agent: {content}\n")
+                    text = await response.content.await_complete()
+                    print(f"Agent: {text}\n")
                 break
 
     print("="*60)

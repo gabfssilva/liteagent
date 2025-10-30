@@ -68,12 +68,7 @@ async def demonstrate_memory():
     for msg in session1_messages:
         print(f"User: {msg}")
         result = await smart_assistant(msg)
-        # Extract text from AssistantMessage
-        if hasattr(result, 'content') and hasattr(result.content, 'await_complete'):
-            text = await result.content.await_complete()
-            print(f"Assistant: {text}\n")
-        else:
-            print(f"Assistant: {result}\n")
+        print(f"Assistant: {result}\n")
 
     print("\n" + "="*70)
     print("📖 Session 2: Retrieving stored information")
@@ -90,12 +85,7 @@ async def demonstrate_memory():
     for msg in session2_messages:
         print(f"User: {msg}")
         result = await smart_assistant(msg)
-        # Extract text from AssistantMessage
-        if hasattr(result, 'content') and hasattr(result.content, 'await_complete'):
-            text = await result.content.await_complete()
-            print(f"Assistant: {text}\n")
-        else:
-            print(f"Assistant: {result}\n")
+        print(f"Assistant: {result}\n")
 
     print("="*70)
     print("\nDemonstration complete!")

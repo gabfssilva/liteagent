@@ -294,9 +294,13 @@ class Agent[Out]:
             async for message in stream:
                 collected.append(message)
 
-            content = collected[-1]
+            last_message = collected[-1]
 
-            return content
+            # Extract text from AssistantMessage
+            if hasattr(last_message, 'content') and hasattr(last_message.content, 'await_complete'):
+                return await last_message.content.await_complete()
+
+            return str(last_message.content) if hasattr(last_message, 'content') else str(last_message)
 
         response: Out | Wrapped[Out] = None
 

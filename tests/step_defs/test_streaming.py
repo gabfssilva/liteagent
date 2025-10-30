@@ -149,15 +149,14 @@ def then_stream_complete(streamed_content):
 
 @then("the non-streaming result should be AssistantMessage")
 def then_non_streaming_is_assistant_message(non_streaming_result):
-    assert isinstance(non_streaming_result, AssistantMessage), f"Expected AssistantMessage, got {type(non_streaming_result)}"
+    # Agent with -> str return type should return str, not AssistantMessage
+    assert isinstance(non_streaming_result, str), f"Expected str (due to -> str type hint), got {type(non_streaming_result)}"
 
 
 @then(parsers.parse('the non-streaming result should contain "{text}"'))
 def then_non_streaming_contains(non_streaming_result, text, extract_text):
-    async def _check():
-        content = await extract_text(non_streaming_result)
-        return text.lower() in content.lower()
-    assert async_to_sync(_check)(), f"Expected '{text}' in result"
+    # non_streaming_result is already a str (due to -> str type hint)
+    assert text.lower() in non_streaming_result.lower(), f"Expected '{text}' in result: {non_streaming_result}"
 
 
 @then("the tool streaming result should have messages")

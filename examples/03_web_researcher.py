@@ -44,7 +44,7 @@ async def researcher(query: str) -> str:
     """Research this topic: {query}"""
 
 
-async def main():
+if __name__ == "__main__":
     # Test the research agent
     queries = [
         "What are the latest developments in quantum computing?",
@@ -57,14 +57,5 @@ async def main():
         print(f"Query: {query}")
         print('='*60)
 
-        result = await researcher(query)
-        # Extract text from AssistantMessage
-        if hasattr(result, 'content') and hasattr(result.content, 'await_complete'):
-            text = await result.content.await_complete()
-            print(text)
-        else:
-            print(result)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        result = asyncio.run(researcher(query))
+        print(result)

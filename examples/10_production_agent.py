@@ -103,13 +103,6 @@ async def executive_assistant(message: str) -> str:
     """User request: {message}"""
 
 
-async def extract_text(msg):
-    """Helper to extract text from AssistantMessage."""
-    if hasattr(msg.content, 'await_complete'):
-        return await msg.content.await_complete()
-    return str(msg.content)
-
-
 async def demonstrate_production_agent():
     """Demonstrate production-ready agent with all features."""
 
@@ -126,8 +119,10 @@ async def demonstrate_production_agent():
 
     async for msg in assistant("Store this: My Q1 goals are to launch product v2.0, hire 3 engineers, and increase revenue by 25%"):
         if msg.role == "assistant" and msg.complete():
-            content = await extract_text(msg)
-            print(f"Assistant: {content}\n")
+            # Extract text from AssistantMessage.TextStream
+            if hasattr(msg.content, 'await_complete'):
+                text = await msg.content.await_complete()
+                print(f"Assistant: {text}\n")
 
     # Scenario 2: Research delegation
     print("📊 Scenario 2: Research Delegation")
@@ -135,8 +130,10 @@ async def demonstrate_production_agent():
 
     async for msg in assistant("Research the latest trends in AI agent frameworks"):
         if msg.role == "assistant" and msg.complete():
-            content = await extract_text(msg)
-            print(f"Assistant: {content}\n")
+            # Extract text from AssistantMessage.TextStream
+            if hasattr(msg.content, 'await_complete'):
+                text = await msg.content.await_complete()
+                print(f"Assistant: {text}\n")
 
     # Scenario 3: Data analysis
     print("🔢 Scenario 3: Data Analysis")
@@ -144,8 +141,10 @@ async def demonstrate_production_agent():
 
     async for msg in assistant("If revenue is currently $1M and we increase by 25%, what's the new revenue? Then calculate quarterly targets."):
         if msg.role == "assistant" and msg.complete():
-            content = await extract_text(msg)
-            print(f"Assistant: {content}\n")
+            # Extract text from AssistantMessage.TextStream
+            if hasattr(msg.content, 'await_complete'):
+                text = await msg.content.await_complete()
+                print(f"Assistant: {text}\n")
 
     # Scenario 4: Memory recall
     print("🧠 Scenario 4: Memory Recall")
@@ -153,8 +152,10 @@ async def demonstrate_production_agent():
 
     async for msg in assistant("What are my Q1 goals that we discussed earlier?"):
         if msg.role == "assistant" and msg.complete():
-            content = await extract_text(msg)
-            print(f"Assistant: {content}\n")
+            # Extract text from AssistantMessage.TextStream
+            if hasattr(msg.content, 'await_complete'):
+                text = await msg.content.await_complete()
+                print(f"Assistant: {text}\n")
 
     # Scenario 5: Security (PII handling)
     print("🔒 Scenario 5: Security & PII Protection")
@@ -162,10 +163,12 @@ async def demonstrate_production_agent():
 
     async for msg in assistant("Remind me to call john.doe@example.com tomorrow"):
         if msg.role == "assistant" and msg.complete():
-            content = await extract_text(msg)
-            print(f"Assistant: {content}")
-            if "john.doe@example.com" not in content.lower():
-                print("✅ PII was redacted for security\n")
+            # Extract text from AssistantMessage.TextStream
+            if hasattr(msg.content, 'await_complete'):
+                text = await msg.content.await_complete()
+                print(f"Assistant: {text}")
+                if "john.doe@example.com" not in text.lower():
+                    print("✅ PII was redacted for security\n")
 
     print("="*80)
     print("\n✨ Production Agent Features Demonstrated:")
