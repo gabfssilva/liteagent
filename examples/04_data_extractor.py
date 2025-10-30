@@ -5,11 +5,11 @@ This example demonstrates:
 - Using Pydantic models for structured output
 - Type-safe responses
 - Automatic data extraction
-- respond_as parameter
+- Return type annotations
 
 Concepts introduced:
 - Pydantic BaseModel
-- respond_as parameter
+- Type annotations (-> Person, -> Company)
 - Structured data extraction
 - Type safety
 
@@ -43,10 +43,7 @@ class Company(BaseModel):
     employees: int = Field(description="Approximate number of employees")
 
 
-@agent(
-    provider=openai(model="gpt-4o-mini"),
-    respond_as=Person
-)
+@agent(provider=openai(model="gpt-4o-mini"))
 async def person_extractor(text: str) -> Person:
     """
     Extract person information from this text: {text}
@@ -55,10 +52,7 @@ async def person_extractor(text: str) -> Person:
     """
 
 
-@agent(
-    provider=openai(model="gpt-4o-mini"),
-    respond_as=Company
-)
+@agent(provider=openai(model="gpt-4o-mini"))
 async def company_extractor(text: str) -> Company:
     """
     Extract company information from this text: {text}

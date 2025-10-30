@@ -66,10 +66,20 @@ async def run_support_session():
         print(f"Customer: {user_message}")
 
         # Agent maintains context from previous messages
+        # Collect all messages and print the final assistant response
+        messages_list = []
         async for response in chat(user_message):
-            if response.role == "assistant" and response.complete():
-                content = await response.content.get() if hasattr(response.content, 'get') else str(response.content)
+            messages_list.append(response)
+
+        # Get the last assistant message
+        for response in reversed(messages_list):
+            if response.role == "assistant":
+                if hasattr(response.content, 'await_complete'):
+                    content = await response.content.await_complete()
+                else:
+                    content = str(response.content)
                 print(f"Agent: {content}\n")
+                break
 
     print("="*60)
     print("Session demonstrates context retention:")

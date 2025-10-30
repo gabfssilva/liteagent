@@ -25,7 +25,7 @@ from liteagent.tools import memoria
 
 @agent(
     provider=openai(model="gpt-4o-mini"),
-    tools=[memoria],
+    tools=[memoria()],
     description="""
     You are a personal assistant with long-term memory.
 
@@ -67,8 +67,13 @@ async def demonstrate_memory():
 
     for msg in session1_messages:
         print(f"User: {msg}")
-        result = asyncio.run(smart_assistant(msg))
-        print(f"Assistant: {result}\n")
+        result = await smart_assistant(msg)
+        # Extract text from AssistantMessage
+        if hasattr(result, 'content') and hasattr(result.content, 'await_complete'):
+            text = await result.content.await_complete()
+            print(f"Assistant: {text}\n")
+        else:
+            print(f"Assistant: {result}\n")
 
     print("\n" + "="*70)
     print("📖 Session 2: Retrieving stored information")
@@ -84,8 +89,13 @@ async def demonstrate_memory():
 
     for msg in session2_messages:
         print(f"User: {msg}")
-        result = asyncio.run(smart_assistant(msg))
-        print(f"Assistant: {result}\n")
+        result = await smart_assistant(msg)
+        # Extract text from AssistantMessage
+        if hasattr(result, 'content') and hasattr(result.content, 'await_complete'):
+            text = await result.content.await_complete()
+            print(f"Assistant: {text}\n")
+        else:
+            print(f"Assistant: {result}\n")
 
     print("="*70)
     print("\nDemonstration complete!")

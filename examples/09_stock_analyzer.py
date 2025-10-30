@@ -45,7 +45,6 @@ class StockAnalysis(BaseModel):
 @agent(
     provider=openai(model="gpt-4o-mini"),
     tools=[yfinance],
-    respond_as=StockAnalysis,
     description="""
     You are an expert stock analyst providing comprehensive investment analysis.
 

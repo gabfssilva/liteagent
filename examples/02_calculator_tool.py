@@ -60,7 +60,7 @@ async def calculator_agent(problem: str) -> str:
     """
 
 
-if __name__ == "__main__":
+async def main():
     # Test the calculator agent
     problems = [
         "What is 234 + 567?",
@@ -70,5 +70,14 @@ if __name__ == "__main__":
 
     for problem in problems:
         print(f"\nProblem: {problem}")
-        result = asyncio.run(calculator_agent(problem))
-        print(f"Answer: {result}")
+        result = await calculator_agent(problem)
+        # Extract text from AssistantMessage
+        if hasattr(result, 'content') and hasattr(result.content, 'await_complete'):
+            text = await result.content.await_complete()
+            print(f"Answer: {text}")
+        else:
+            print(f"Answer: {result}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

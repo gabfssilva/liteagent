@@ -73,9 +73,8 @@ async def data_analyst(calculation: str) -> str:
 @guardrail(NoPII(block_on_detection=False))  # Security layer
 @agent(
     provider=openai(model="gpt-4o-mini"),
-    tools=[memoria],  # Long-term memory
+    tools=[memoria()],  # Long-term memory
     team=[research_specialist, data_analyst],  # Specialist team
-    respond_as=None,  # Dynamic response type
     description="""
     You are an Executive AI Assistant with advanced capabilities:
 
@@ -104,6 +103,13 @@ async def executive_assistant(message: str) -> str:
     """User request: {message}"""
 
 
+async def extract_text(msg):
+    """Helper to extract text from AssistantMessage."""
+    if hasattr(msg.content, 'await_complete'):
+        return await msg.content.await_complete()
+    return str(msg.content)
+
+
 async def demonstrate_production_agent():
     """Demonstrate production-ready agent with all features."""
 
@@ -120,7 +126,7 @@ async def demonstrate_production_agent():
 
     async for msg in assistant("Store this: My Q1 goals are to launch product v2.0, hire 3 engineers, and increase revenue by 25%"):
         if msg.role == "assistant" and msg.complete():
-            content = await msg.content.get() if hasattr(msg.content, 'get') else str(msg.content)
+            content = await extract_text(msg)
             print(f"Assistant: {content}\n")
 
     # Scenario 2: Research delegation
@@ -129,7 +135,7 @@ async def demonstrate_production_agent():
 
     async for msg in assistant("Research the latest trends in AI agent frameworks"):
         if msg.role == "assistant" and msg.complete():
-            content = await msg.content.get() if hasattr(msg.content, 'get') else str(msg.content)
+            content = await extract_text(msg)
             print(f"Assistant: {content}\n")
 
     # Scenario 3: Data analysis
@@ -138,7 +144,7 @@ async def demonstrate_production_agent():
 
     async for msg in assistant("If revenue is currently $1M and we increase by 25%, what's the new revenue? Then calculate quarterly targets."):
         if msg.role == "assistant" and msg.complete():
-            content = await msg.content.get() if hasattr(msg.content, 'get') else str(msg.content)
+            content = await extract_text(msg)
             print(f"Assistant: {content}\n")
 
     # Scenario 4: Memory recall
@@ -147,7 +153,7 @@ async def demonstrate_production_agent():
 
     async for msg in assistant("What are my Q1 goals that we discussed earlier?"):
         if msg.role == "assistant" and msg.complete():
-            content = await msg.content.get() if hasattr(msg.content, 'get') else str(msg.content)
+            content = await extract_text(msg)
             print(f"Assistant: {content}\n")
 
     # Scenario 5: Security (PII handling)
@@ -156,7 +162,7 @@ async def demonstrate_production_agent():
 
     async for msg in assistant("Remind me to call john.doe@example.com tomorrow"):
         if msg.role == "assistant" and msg.complete():
-            content = await msg.content.get() if hasattr(msg.content, 'get') else str(msg.content)
+            content = await extract_text(msg)
             print(f"Assistant: {content}")
             if "john.doe@example.com" not in content.lower():
                 print("✅ PII was redacted for security\n")
