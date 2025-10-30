@@ -19,9 +19,12 @@ This file contains essential information for AI assistants and developers workin
 
 **Testing Philosophy:**
 - **All tests must pass (100% pass rate required)** - 85% passing is 0% success
+- **MANDATORY: Always run full test suite after ANY code changes** - Never declare success without 100% pass rate
+- **MANDATORY: Never assume a failing test is "irrelevant"** - Every test failure must be investigated
 - Tests should be deterministic and reliable
 - BDD scenarios should be clear and complete
 - No flaky tests, no "good enough" solutions
+- If a test fails due to external issues (network, API), re-run until 100% pass rate is confirmed
 
 **Documentation Philosophy:**
 - **NEVER create markdown files (.md) unless explicitly requested by the user**
@@ -419,8 +422,13 @@ uv run py-spy record -o profile.svg -- python your_script.py
 
 ## Contributing Guidelines
 
-1. **Always run tests** before committing: `uv run pytest tests/step_defs/ -v`
-2. **All tests must pass** - 100% pass rate required, 85% is 0%
+1. **MANDATORY: Always run full test suite after ANY code changes**:
+   - Command: `uv run pytest tests/step_defs/ -v`
+   - **100% pass rate required** - No exceptions, no excuses
+   - If tests fail, STOP and investigate - never proceed with failures
+   - Re-run tests if external issues (network, APIs) cause transient failures
+   - Only declare success when you see: "X passed in Y seconds" with no failures
+2. **All tests must pass** - 100% pass rate required, 99% is 0%, 85% is 0%
 3. **Add BDD tests** for new features:
    - Create `.feature` file in `tests/features/`
    - Create step definitions in `tests/step_defs/`
