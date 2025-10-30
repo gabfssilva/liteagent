@@ -1,7 +1,6 @@
 import asyncio
 
-from liteagent import agent, bus
-from liteagent.events import ToolMessageEvent
+from liteagent import agent
 from liteagent.providers import openai
 from liteagent.tools import wikipedia, python_runner
 
@@ -45,11 +44,6 @@ def searcher() -> str:
     **DO NOT FORGET:** At the end, redirect to `code_runner` to make your calculations as precise as possible.
     USE CODE RUNNER!!!!!!!!
     """
-
-
-@bus.on(ToolMessageEvent)
-async def on_message(msg: ToolMessageEvent):
-    print(msg)
 
 
 if __name__ == '__main__':

@@ -12,14 +12,6 @@ from .message import Message, UserMessage, Image, AssistantMessage, ToolMessage,
 from .internal.cached_iterator import CachedStringAccumulator
 from .prompts import TOOL_AGENT_PROMPT
 from .tool import Tool, ToolDef
-from .bus import EventBus, create_bus
-from .events import (
-    SystemMessageEvent,
-    UserMessageEvent,
-    AssistantMessageEvent,
-    ToolMessageEvent,
-    AgentCallEvent
-)
 
 ResponseMode = Literal["stream", "list", "last"] | Callable[[Message], bool]
 AgentResponse = BaseModel | Message | List[Message] | AsyncIterable[Message]
@@ -40,7 +32,6 @@ class Agent[Out]:
     signature: Signature = None
     user_prompt_template: str = None
     _as_dispatcher: ToolDef = None
-    bus: EventBus = None
 
     def __init__(
         self,
@@ -52,8 +43,7 @@ class Agent[Out]:
         team: List['Agent'] = None,
         respond_as: Type[Out | Wrapped[Out]] = None,
         signature: Signature = None,
-        user_prompt_template: str = None,
-        bus: Optional[EventBus] = None
+        user_prompt_template: str = None
     ):
         self.name = name
         self.provider = provider
@@ -65,9 +55,6 @@ class Agent[Out]:
         self._tool_by_name = {t.name: t for t in self._all_tools}
         self.signature = signature
         self.user_prompt_template = user_prompt_template
-
-        # Use provided bus or create a new one if None
-        self.bus = bus if bus is not None else create_bus()
 
         if respond_as and (isinstance(respond_as, type) and issubclass(respond_as, BaseModel) or respond_as == str):
             self.respond_as = respond_as
@@ -84,40 +71,6 @@ class Agent[Out]:
 
     def __repr__(self):
         return f"🤖{self.name}"
-
-    async def _emit_event(self, message: Message):
-        loop_id = message.loop_id
-
-        match message:
-            case SystemMessage() as message:
-                await self.bus.emit(SystemMessageEvent(
-                    agent=self,
-                    message=message,
-                    loop_id=loop_id
-                ))
-            case UserMessage() as message:
-                await self.bus.emit(UserMessageEvent(
-                    agent=self,
-                    message=message,
-                    loop_id=loop_id
-                ))
-            case AssistantMessage() as message:
-                await self.bus.emit(AssistantMessageEvent(
-                    agent=self,
-                    message=message,
-                    loop_id=loop_id
-                ))
-            case ToolMessage() as message:
-                tool_name = message.tool_name
-                tool = self.tool_by_name(tool_name)
-                
-                await self.bus.emit(ToolMessageEvent(
-                    agent=self,
-                    message=message,
-                    tool=tool,
-                    tool_use_id=message.tool_use_id,
-                    loop_id=loop_id
-                ))
 
     def stateful(self):
         from . import session
@@ -240,12 +193,6 @@ class Agent[Out]:
         if not loop_id:
             loop_id = str(uuid.uuid4())
 
-        await self.bus.emit(AgentCallEvent(
-            agent=self,
-            messages=messages,
-            loop_id=loop_id
-        ))
-
         eagerly_invoked = await self._eagerly_invoked_tools(loop_id)
         prompt = self._system_prompt()
 
@@ -260,9 +207,6 @@ class Agent[Out]:
             *messages,
             *eagerly_invoked,
         ]
-
-        for message in message_list:
-            await self._emit_event(message)
 
         async for message in self._inner_call(message_list, loop_id):
             yield message
@@ -287,12 +231,10 @@ class Agent[Out]:
                 case AssistantMessage(content=AssistantMessage.ToolUseStream()) as message:
                     message.content.tool = self.tool_by_name(message.content.name)
 
-                    await self._emit_event(message)
                     yield message
 
                     pending_tools.append(self._run_tool(message.content, loop_id))
                 case _:
-                    await self._emit_event(message)
                     yield message
 
         if len(pending_tools) > 0:
@@ -333,8 +275,6 @@ class Agent[Out]:
                 content=tool_result,
                 loop_id=loop_id,
             )
-
-            await self._emit_event(message)
 
             return message
         except Exception as e:
@@ -396,8 +336,6 @@ class Agent[Out]:
             # Set loop_id on the assistant message
             object.__setattr__(assistant_message, 'loop_id', loop_id)
 
-            await self._emit_event(assistant_message)
-
             result.append(assistant_message)
 
             try:
@@ -412,8 +350,6 @@ class Agent[Out]:
 
                 # Set loop_id on the tool message
                 object.__setattr__(tool_message, 'loop_id', loop_id)
-
-                await self._emit_event(tool_message)
 
                 result.append(tool_message)
             except Exception as e:

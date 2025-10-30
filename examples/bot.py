@@ -1,7 +1,6 @@
 import asyncio
 
 from liteagent import agent
-from liteagent.events import Event
 from liteagent.providers import openai, deepseek
 from liteagent.tools import duckduckgo, vision
 
@@ -16,12 +15,6 @@ async def viewer() -> str: pass
 
 @agent(provider=deepseek(), team=[searcher, viewer])
 async def chatbot() -> str: pass
-
-
-@chatbot.bus.on(Event)
-@searcher.bus.on(Event)
-async def listen(event: Event):
-    print(event)
 
 
 if __name__ == "__main__":

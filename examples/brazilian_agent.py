@@ -1,15 +1,9 @@
 import asyncio
 from asyncio import sleep
 
-from liteagent import agent, bus
-from liteagent.events import MessageEvent, AssistantMessageEvent
+from liteagent import agent
 from liteagent.providers import deepseek
 from liteagent.tools import brasil_api
-
-
-@bus.on(AssistantMessageEvent)
-async def on_message(event: AssistantMessageEvent):
-    print(f"{event.event_type} ({event.id}): {event.message.content}")
 
 
 @agent(
